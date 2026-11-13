@@ -2491,7 +2491,7 @@ tnotify("meowlua", "ultron tier loaded")
 
 -- extra config flags
 for k, v in pairs({
-    godmode_v2 = false, godmode_depth = 25, godmode_grace = 0.08,
+    godmode_v2 = false, godmode_depth = 8, godmode_grace = 0.05,
     silent_aim_hard = false, triggerbot = false, triggerbot_delay = 0.05, triggerbot_range = 2500,
     aimbot = false, aimbot_fov = 180, aimbot_smooth = 1, aimbot_closest = false,
     gun_mods_hard = false, fully_aiming_lie = false,
@@ -2584,8 +2584,30 @@ local function god_restore_collide(saved)
 end
 local god_collide_cache
 
+local function god_harden_hum(hum)
+    if not hum then return end
+    pcall(function()
+        hum.BreakJointsOnDeath = false
+        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        hum.MaxHealth = 1e9
+        hum.Health    = 1e9
+    end)
+end
+
 function Movement.start_godmode_v2()
     killConn("god_v2")
+    local hum0 = getgenv().get_hum()
+    god_harden_hum(hum0)
+    -- re-harden on respawn
+    killConn("god_v2_respawn")
+    bindConn("god_v2_respawn", localplayer.CharacterAdded:Connect(function(c)
+        local h = c:WaitForChild("Humanoid", 5)
+        task.wait(0.2)
+        god_harden_hum(h)
+    end))
+
     bindConn("god_v2", run_service.Heartbeat:Connect(function()
         if not config.godmode_v2 then
             if god_collide_cache then god_restore_collide(god_collide_cache); god_collide_cache = nil end
@@ -2595,23 +2617,26 @@ function Movement.start_godmode_v2()
         local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return end
         local hum = c:FindFirstChildOfClass("Humanoid"); if not hum then return end
 
+        -- keep the hum immortal every tick
+        god_harden_hum(hum)
+        if hum:GetState() == Enum.HumanoidStateType.Dead or hum:GetState() == Enum.HumanoidStateType.FallingDown then
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        end
+
         -- noclip the body so projectiles pass through terrain seams
         if not god_collide_cache then god_collide_cache = god_save_collide(c) end
         for p, _ in pairs(god_collide_cache) do pcall(function() p.CanCollide = false end) end
 
-        -- push the root underground on a loop
-        if not god_saved_pos or (tick() - god_last_tp) > (config.godmode_grace or 0.08) then
-            god_saved_pos = Vector3.new(hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
-            god_last_tp = tick()
-        end
-        local depth = config.godmode_depth or 25
+        -- lock the saved pos only once, until toggled off
+        if not god_saved_pos then god_saved_pos = hrp.Position end
+        god_last_tp = tick()
+        local depth = config.godmode_depth or 8
         pcall(function()
             hrp.CFrame = CFrame.new(god_saved_pos.X, god_saved_pos.Y - depth, god_saved_pos.Z)
             hrp.AssemblyLinearVelocity  = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
         end)
 
-        -- auto-heal below the map
         if hum.Health < hum.MaxHealth then
             hum.Health = hum.MaxHealth
             Stats.god_saves = Stats.god_saves + 1
@@ -2619,10 +2644,24 @@ function Movement.start_godmode_v2()
     end))
 end
 function Movement.stop_godmode_v2()
-    killConn("god_v2")
+    killConn("god_v2"); killConn("god_v2_respawn")
     if god_collide_cache then god_restore_collide(god_collide_cache); god_collide_cache = nil end
     local hrp = getgenv().get_hrp(localplayer)
-    if hrp and god_saved_pos then pcall(function() hrp.CFrame = CFrame.new(god_saved_pos) end) end
+    if hrp and god_saved_pos then
+        pcall(function()
+            hrp.CFrame = CFrame.new(god_saved_pos.X, god_saved_pos.Y + 3, god_saved_pos.Z)
+            hrp.AssemblyLinearVelocity  = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end)
+    end
+    local hum = getgenv().get_hum()
+    if hum then pcall(function()
+        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        hum.BreakJointsOnDeath = true
+        hum.MaxHealth = 100; hum.Health = 100
+    end) end
     god_saved_pos = nil
 end
 
@@ -3041,6 +3080,151 @@ if library then
     box_stats:AddButton({ Text="Reset Counters", Func=function()
         for k, _ in pairs(Stats) do if type(Stats[k]) == "number" then Stats[k] = 0 end end
         Stats.session_start = tick()
+    end })
+end
+
+-- =========================================================================
+-- VOID SENDER — picks a target, flood-fires shoot remote + bullet TP burst
+-- =========================================================================
+getgenv().void_sender_target = ""
+getgenv().void_sender_running = false
+
+getgenv().void_send = function(name, duration)
+    duration = duration or 2.5
+    local target = name and name ~= "" and players:FindFirstChild(name) or getgenv().get_closest(true)
+    if not target or not target.Character then
+        notify("Void Sender", "no target"); return
+    end
+    local c = target.Character
+    local head = c:FindFirstChild("Head") or c:FindFirstChild("HumanoidRootPart")
+    local hum  = c:FindFirstChildOfClass("Humanoid")
+    if not head or not hum then return end
+
+    getgenv().void_sender_running = true
+    notify("Void Sender", "sending "..target.Name.." to the void")
+
+    -- 1) client-side visual: yank their character to Y -5e9 locally
+    task.spawn(function()
+        local hrp = c:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            for _ = 1, 20 do
+                if not getgenv().void_sender_running or not hrp.Parent then break end
+                pcall(function() hrp.CFrame = CFrame.new(0, -5e9, 0) end)
+                task.wait(0.05)
+            end
+        end
+    end)
+
+    -- 2) flood shoot remote + hum:TakeDamage through SBD's damage call
+    local t0 = tick()
+    task.spawn(function()
+        while getgenv().void_sender_running and tick() - t0 < duration do
+            pcall(function()
+                if getgenv().fire_autoshoot then getgenv().fire_autoshoot(head, c) end
+                if hum and hum.Parent then hum:TakeDamage(9999) end
+            end)
+            task.wait(0.03)
+        end
+        getgenv().void_sender_running = false
+        notify("Void Sender", "done: "..target.Name)
+    end)
+end
+
+getgenv().void_stop = function()
+    getgenv().void_sender_running = false
+end
+
+-- =========================================================================
+-- RIVAL SCOREBOARD — one-click tally per competitor script
+-- =========================================================================
+local Rivals = {
+    "kicia", "sleepy", "UE", "phonk ware", "anti brain",
+    "yokai", "elisium", "YokaiNamed",
+}
+getgenv().RivalScore = getgenv().RivalScore or {}
+for _, k in ipairs(Rivals) do
+    getgenv().RivalScore[k] = getgenv().RivalScore[k] or 0
+end
+
+getgenv().rival_bump = function(name)
+    getgenv().RivalScore[name] = (getgenv().RivalScore[name] or 0) + 1
+    notify("beat "..name, tostring(getgenv().RivalScore[name]))
+end
+
+-- extend stats HUD label to include the scoreboard
+local orig_start_hud = getgenv().start_stats_hud
+getgenv().start_stats_hud = function()
+    orig_start_hud()
+    if not stats_gui then return end
+    local frame = stats_gui:FindFirstChildOfClass("Frame"); if not frame then return end
+    -- expand frame
+    frame.Size = UDim2.new(0, 260, 0, 480)
+    local score_lbl = Instance.new("TextLabel", frame)
+    score_lbl.Name = "RivalScore"
+    score_lbl.Size = UDim2.new(1, -16, 0, 200)
+    score_lbl.Position = UDim2.fromOffset(10, 260)
+    score_lbl.BackgroundTransparency = 1
+    score_lbl.Font = Enum.Font.Code; score_lbl.TextSize = 13
+    score_lbl.TextColor3 = Color3.fromRGB(255, 180, 60)
+    score_lbl.TextXAlignment = Enum.TextXAlignment.Left
+    score_lbl.TextYAlignment = Enum.TextYAlignment.Top
+
+    local score_title = Instance.new("TextLabel", frame)
+    score_title.Size = UDim2.new(1, 0, 0, 20)
+    score_title.Position = UDim2.fromOffset(0, 240)
+    score_title.BackgroundTransparency = 1
+    score_title.Text = "rival scoreboard"
+    score_title.Font = Enum.Font.GothamBold; score_title.TextSize = 13
+    score_title.TextColor3 = Color3.fromRGB(255, 180, 60)
+
+    bindConn("score_render", run_service.RenderStepped:Connect(function()
+        if not score_lbl or not score_lbl.Parent then return end
+        local lines = {}
+        for _, k in ipairs(Rivals) do
+            table.insert(lines, string.format("%-12s  %d", k, getgenv().RivalScore[k] or 0))
+        end
+        score_lbl.Text = table.concat(lines, "\n")
+    end))
+end
+
+-- UI graft for void sender + scoreboard
+if library then
+    local tgl        = getgenv().meow_tgl
+    local tab_combat = getgenv().meow_tab_combat
+    local tab_misc   = getgenv().meow_tab_misc
+
+    local box_void = tab_combat:AddRightGroupbox("Void Sender")
+    local vs_names = { "" }
+    for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(vs_names, p.Name) end end
+    local vs_drop = box_void:AddDropdown("vs_target", { Text="Target", Default=1, Values=vs_names })
+    vs_drop:OnChanged(function(v) getgenv().void_sender_target = v end)
+    players.PlayerAdded:Connect(function()
+        local list = { "" }
+        for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(list, p.Name) end end
+        pcall(function() vs_drop:SetValues(list) end)
+    end)
+    players.PlayerRemoving:Connect(function()
+        local list = { "" }
+        for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(list, p.Name) end end
+        pcall(function() vs_drop:SetValues(list) end)
+    end)
+    box_void:AddSlider("vs_dur", { Text="Burst Duration (x100ms)", Default=25, Min=5, Max=100, Rounding=0 })
+        :OnChanged(function(v) getgenv().void_send_dur = v/10 end)
+    box_void:AddButton({ Text="SEND TO VOID", Func=function()
+        getgenv().void_send(getgenv().void_sender_target, getgenv().void_send_dur or 2.5)
+    end })
+    box_void:AddButton({ Text="SEND CLOSEST", Func=function()
+        getgenv().void_send(nil, getgenv().void_send_dur or 2.5)
+    end })
+    box_void:AddButton({ Text="Stop Void Burst", Func=function() getgenv().void_stop() end })
+
+    local box_score = tab_misc:AddRightGroupbox("Rival Scoreboard")
+    for _, name in ipairs(Rivals) do
+        local n = name
+        box_score:AddButton({ Text="beat "..n, Func=function() getgenv().rival_bump(n) end })
+    end
+    box_score:AddButton({ Text="Reset Scoreboard", Func=function()
+        for _, k in ipairs(Rivals) do getgenv().RivalScore[k] = 0 end
     end })
 end
 
