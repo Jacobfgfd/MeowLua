@@ -3232,3 +3232,8593 @@ end
 if config.stats_hud then getgenv().start_stats_hud() end
 
 notify("meowlua", "rivals patch: godmode v2, silent-hard, triggerbot, aimbot, counters live")
+-- =========================================================================
+-- MEGA GRAFT — kill aura, bhop, FOV, 3p, crosshair, watermark, rainbow
+-- chams, smart panic, weapon cycle, spectate, trash cleaner, kill all,
+-- airwalk, admin list extend, gravity, hitmarker
+-- =========================================================================
+
+for k, v in pairs({
+    kill_aura = false, kill_aura_radius = 25, kill_aura_damage = 500,
+    kill_all = false,
+    bhop = false,
+    gravity_enabled = false, gravity = 196,
+    fov_enabled = false, fov = 70,
+    third_person = false, third_person_dist = 10,
+    crosshair_enabled = false, crosshair_size = 8, crosshair_gap = 3, crosshair_thick = 1,
+    crosshair_color = Color3.fromRGB(0, 255, 180),
+    watermark = true,
+    rainbow_chams = false,
+    smart_panic = false, smart_panic_hp = 40,
+    weapon_cycle = false, weapon_cycle_delay = 0.5,
+    spectate_target = "",
+    trash_cleaner = false,
+    airwalk = false,
+    hitmarker_sound = false, hitmarker_id = "rbxassetid://3807102805",
+    admin_detector = false,
+    killsay = false, killsay_text = "beat by meowlua",
+    anti_slow = false,
+    jump_height = false, jump_height_v = 7.2,
+    free_dev_console = false,
+}) do if config[k] == nil then config[k] = v end end
+
+-- ---------- KILL AURA (radius + damage flood) ---------------------------
+bindConn("kill_aura", run_service.Heartbeat:Connect(function()
+    if not config.kill_aura then return end
+    local hrp = getgenv().get_hrp(localplayer); if not hrp then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p == localplayer then continue end
+        if p.Team and localplayer.Team and p.Team == localplayer.Team then continue end
+        local c = p.Character; if not c then continue end
+        local h = c:FindFirstChild("Head") or c:FindFirstChild("HumanoidRootPart")
+        local hum = c:FindFirstChildOfClass("Humanoid")
+        if not h or not hum or hum.Health <= 0 then continue end
+        if c:FindFirstChildOfClass("ForceField") then continue end
+        if (h.Position - hrp.Position).Magnitude <= (config.kill_aura_radius or 25) then
+            pcall(function()
+                if getgenv().fire_autoshoot then getgenv().fire_autoshoot(h, c) end
+                hum:TakeDamage(config.kill_aura_damage or 500)
+            end)
+        end
+    end
+end))
+
+-- ---------- KILL ALL (one-shot rage sweep every enemy) ------------------
+getgenv().kill_all_once = function()
+    for _, p in ipairs(players:GetPlayers()) do
+        if p == localplayer then continue end
+        if p.Team and localplayer.Team and p.Team == localplayer.Team then continue end
+        local c = p.Character; if not c then continue end
+        local h = c:FindFirstChild("Head") or c:FindFirstChild("HumanoidRootPart")
+        local hum = c:FindFirstChildOfClass("Humanoid")
+        if h and hum and hum.Health > 0 and not c:FindFirstChildOfClass("ForceField") then
+            task.spawn(function()
+                for _ = 1, 15 do
+                    pcall(function()
+                        if getgenv().fire_autoshoot then getgenv().fire_autoshoot(h, c) end
+                        hum:TakeDamage(9999)
+                    end)
+                    task.wait(0.03)
+                end
+            end)
+        end
+    end
+end
+
+-- ---------- BUNNY HOP ---------------------------------------------------
+bindConn("bhop", run_service.Heartbeat:Connect(function()
+    if not config.bhop then return end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        local h = getgenv().get_hum()
+        if h and h.FloorMaterial ~= Enum.Material.Air then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end))
+
+-- ---------- GRAVITY -----------------------------------------------------
+bindConn("gravity_apply", run_service.Heartbeat:Connect(function()
+    if not config.gravity_enabled then return end
+    if workspace.Gravity ~= config.gravity then pcall(function() workspace.Gravity = config.gravity end) end
+end))
+
+-- ---------- CAMERA FOV --------------------------------------------------
+bindConn("fov_apply", run_service.RenderStepped:Connect(function()
+    if not config.fov_enabled then return end
+    local cam = workspace.CurrentCamera; if not cam then return end
+    if cam.FieldOfView ~= config.fov then pcall(function() cam.FieldOfView = config.fov end) end
+end))
+
+-- ---------- THIRD PERSON ------------------------------------------------
+bindConn("third_person_apply", run_service.RenderStepped:Connect(function()
+    if not config.third_person then return end
+    pcall(function()
+        localplayer.CameraMode = Enum.CameraMode.Classic
+        local h = getgenv().get_hum()
+        if h then
+            h.CameraOffset = Vector3.new(2, 0, (config.third_person_dist or 10))
+        end
+    end)
+end))
+
+-- ---------- JUMP HEIGHT OVERRIDE ---------------------------------------
+bindConn("jump_height_apply", run_service.Heartbeat:Connect(function()
+    if not config.jump_height then return end
+    local h = getgenv().get_hum(); if not h then return end
+    pcall(function()
+        h.UseJumpPower = false
+        h.JumpHeight = config.jump_height_v or 7.2
+    end)
+end))
+
+-- ---------- CROSSHAIR (4 line drawing) ---------------------------------
+local xh = { lines = {} }
+for i = 1, 4 do xh.lines[i] = Drawing.new("Line"); xh.lines[i].Thickness = 1; xh.lines[i].Visible = false end
+bindConn("xh_render", run_service.RenderStepped:Connect(function()
+    local cam = workspace.CurrentCamera
+    if not config.crosshair_enabled or not cam then
+        for _, l in ipairs(xh.lines) do l.Visible = false end; return
+    end
+    local cx, cy = cam.ViewportSize.X/2, cam.ViewportSize.Y/2
+    local s = config.crosshair_size or 8; local g = config.crosshair_gap or 3
+    local col = config.crosshair_color or Color3.fromRGB(0,255,180)
+    local t = config.crosshair_thick or 1
+    local coords = {
+        { Vector2.new(cx-g-s, cy), Vector2.new(cx-g, cy) },
+        { Vector2.new(cx+g, cy), Vector2.new(cx+g+s, cy) },
+        { Vector2.new(cx, cy-g-s), Vector2.new(cx, cy-g) },
+        { Vector2.new(cx, cy+g), Vector2.new(cx, cy+g+s) },
+    }
+    for i, l in ipairs(xh.lines) do
+        l.From = coords[i][1]; l.To = coords[i][2]
+        l.Color = col; l.Thickness = t; l.Visible = true
+    end
+end))
+
+-- ---------- WATERMARK ---------------------------------------------------
+local wm_gui, wm_lbl
+local function build_watermark()
+    if wm_gui then wm_gui:Destroy() end
+    wm_gui = Instance.new("ScreenGui"); wm_gui.Name = "MeowWatermark"; wm_gui.IgnoreGuiInset = true
+    pcall(function() wm_gui.Parent = CoreGui end)
+    if not wm_gui.Parent then wm_gui.Parent = localplayer:WaitForChild("PlayerGui", 5) end
+    local f = Instance.new("Frame", wm_gui)
+    f.Size = UDim2.new(0, 360, 0, 28); f.Position = UDim2.new(0, 12, 0, 12)
+    f.BackgroundColor3 = Color3.fromRGB(10,10,12); f.BackgroundTransparency = 0.25; f.BorderSizePixel = 0
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 6)
+    local str = Instance.new("UIStroke", f); str.Color = Color3.fromRGB(0,255,180); str.Thickness = 1
+    wm_lbl = Instance.new("TextLabel", f)
+    wm_lbl.Size = UDim2.new(1, -16, 1, 0); wm_lbl.Position = UDim2.fromOffset(8, 0)
+    wm_lbl.BackgroundTransparency = 1; wm_lbl.Font = Enum.Font.Code; wm_lbl.TextSize = 13
+    wm_lbl.TextColor3 = Color3.fromRGB(0,255,180); wm_lbl.TextXAlignment = Enum.TextXAlignment.Left
+end
+build_watermark()
+local fps_count, fps_last, fps_val = 0, tick(), 0
+bindConn("wm_render", run_service.RenderStepped:Connect(function()
+    if not config.watermark then if wm_gui then wm_gui.Enabled = false end; return end
+    if wm_gui then wm_gui.Enabled = true end
+    fps_count = fps_count + 1
+    if tick() - fps_last >= 1 then fps_val = fps_count; fps_count = 0; fps_last = tick() end
+    local ping = math.floor(localplayer:GetNetworkPing() * 1000)
+    local up = math.floor(tick() - Stats.session_start)
+    wm_lbl.Text = string.format("meowlua ultron · %s · fps %d · ping %dms · %02d:%02d",
+        localplayer.Name, fps_val, ping, math.floor(up/60), up%60)
+end))
+
+-- ---------- RAINBOW CHAMS ----------------------------------------------
+bindConn("rainbow_chams", run_service.Heartbeat:Connect(function()
+    if not config.rainbow_chams or not config.chams_enabled then return end
+    config.chams_fill = Color3.fromHSV(tick()*0.2 % 1, 1, 1)
+end))
+
+-- ---------- SMART PANIC (auto-god + evasion on low hp) ------------------
+bindConn("smart_panic", run_service.Heartbeat:Connect(function()
+    if not config.smart_panic then return end
+    local h = getgenv().get_hum(); if not h then return end
+    if h.Health <= (config.smart_panic_hp or 40) and h.Health > 0 then
+        if not config.godmode_v2 then config.godmode_v2 = true; Movement.start_godmode_v2() end
+        if not config.evasion_enabled then config.evasion_enabled = true; getgenv().start_evasion() end
+    else
+        if config.godmode_v2 then config.godmode_v2 = false; Movement.stop_godmode_v2() end
+        if config.evasion_enabled then config.evasion_enabled = false; getgenv().stop_evasion() end
+    end
+end))
+
+-- ---------- WEAPON CYCLE ------------------------------------------------
+local wc_slot = 1
+bindConn("weapon_cycle", run_service.Heartbeat:Connect(function()
+    if not config.weapon_cycle then return end
+end))
+bindTask("weapon_cycle_task", task.spawn(function()
+    while true do
+        task.wait(config.weapon_cycle_delay or 0.5)
+        if config.weapon_cycle then
+            pcall(function()
+                local fc = require(localplayer.PlayerScripts.Controllers.FighterController)
+                if fc.LocalFighter and fc.LocalFighter.EquipItem then
+                    fc.LocalFighter:EquipItem(wc_slot)
+                    wc_slot = wc_slot % 3 + 1
+                end
+            end)
+        end
+    end
+end))
+
+-- ---------- SPECTATE ----------------------------------------------------
+local spectate_orig_subject
+getgenv().start_spectate = function(name)
+    local p = players:FindFirstChild(name); if not p or not p.Character then return end
+    local hum = p.Character:FindFirstChildOfClass("Humanoid"); if not hum then return end
+    local cam = workspace.CurrentCamera
+    if not spectate_orig_subject then spectate_orig_subject = cam.CameraSubject end
+    cam.CameraSubject = hum
+end
+getgenv().stop_spectate = function()
+    local cam = workspace.CurrentCamera
+    if spectate_orig_subject then cam.CameraSubject = spectate_orig_subject end
+    spectate_orig_subject = nil
+end
+
+-- ---------- TRASH CLEANER (strip particles/beams/trails) ----------------
+bindConn("trash_cleaner", run_service.Heartbeat:Connect(function()
+    if not config.trash_cleaner then return end
+    for _, o in ipairs(workspace:GetDescendants()) do
+        if o:IsA("ParticleEmitter") or o:IsA("Trail") or o:IsA("Beam") or o:IsA("Smoke") or o:IsA("Fire") or o:IsA("Sparkles") then
+            pcall(function() o.Enabled = false end)
+        end
+    end
+end))
+
+-- ---------- AIRWALK (platform under feet) -------------------------------
+local airwalk_part
+bindConn("airwalk", run_service.Heartbeat:Connect(function()
+    if not config.airwalk then
+        if airwalk_part then airwalk_part:Destroy(); airwalk_part = nil end
+        return
+    end
+    local hrp = getgenv().get_hrp(localplayer); if not hrp then return end
+    if not airwalk_part or not airwalk_part.Parent then
+        airwalk_part = Instance.new("Part")
+        airwalk_part.Size = Vector3.new(10, 1, 10)
+        airwalk_part.Anchored = true; airwalk_part.CanCollide = true
+        airwalk_part.Transparency = 1; airwalk_part.Name = "MeowFloor"
+        airwalk_part.Parent = workspace
+    end
+    airwalk_part.CFrame = CFrame.new(hrp.Position - Vector3.new(0, 3.5, 0))
+end))
+
+-- ---------- ADMIN DETECTOR (extended name list) -------------------------
+local ADMIN_NAMES = {
+    "mod","admin","staff","owner","dev","developer","helper","support","moderator",
+    "ceo","cto","founder","tester","qa","community","intern","contractor",
+}
+bindTask("admin_detector_v2", task.spawn(function()
+    while true do
+        task.wait(3)
+        if config.admin_detector then
+            for _, plr in ipairs(players:GetPlayers()) do
+                if plr == localplayer then continue end
+                local nm = plr.Name:lower()
+                for _, tag in ipairs(ADMIN_NAMES) do
+                    if nm:find(tag) then
+                        notify("ADMIN DETECTED", plr.Name)
+                        pcall(function() teleport_service:Teleport(game.PlaceId) end)
+                        return
+                    end
+                end
+            end
+        end
+    end
+end))
+
+-- ---------- HITMARKER SOUND --------------------------------------------
+local hm_sound
+local function play_hitmarker()
+    if not config.hitmarker_sound then return end
+    if not hm_sound then
+        hm_sound = Instance.new("Sound")
+        hm_sound.SoundId = config.hitmarker_id or "rbxassetid://3807102805"
+        hm_sound.Volume = 1.5
+        hm_sound.Parent = workspace
+    end
+    hm_sound:Play()
+end
+getgenv().meow_hitmarker = play_hitmarker
+
+-- hook into SBD counter bumps to fire hitmarker on each hijack
+task.spawn(function()
+    local last_hijack = 0
+    while true do
+        task.wait(0.05)
+        if config.hitmarker_sound and getgenv().SBD and getgenv().SBD.shotCount > last_hijack then
+            play_hitmarker(); last_hijack = getgenv().SBD.shotCount
+        end
+    end
+end)
+
+-- =========================================================================
+-- UI GRAFT (mega) — spread across tabs so nothing is cramped
+-- =========================================================================
+if library then
+    local tgl        = getgenv().meow_tgl
+    local tab_combat = getgenv().meow_tab_combat
+    local tab_move   = getgenv().meow_tab_move
+    local tab_visuals= getgenv().meow_tab_visuals
+    local tab_world  = getgenv().meow_tab_world
+    local tab_player = getgenv().meow_tab_player
+    local tab_misc   = getgenv().meow_tab_misc
+
+    -- KILL AURA + KILL ALL
+    local box_ka = tab_combat:AddRightGroupbox("Kill Aura")
+    tgl(box_ka, "ka_e", "Kill Aura", "Damages every enemy inside radius.", function(v) config.kill_aura=v end)
+    box_ka:AddSlider("ka_r", { Text="Radius",   Default=25,  Min=5, Max=200, Rounding=0 }):OnChanged(function(v) config.kill_aura_radius=v end)
+    box_ka:AddSlider("ka_d", { Text="Damage",   Default=500, Min=50, Max=9999, Rounding=0 }):OnChanged(function(v) config.kill_aura_damage=v end)
+    box_ka:AddButton({ Text="KILL ALL (one-shot sweep)", Func=function() getgenv().kill_all_once() end })
+
+    -- SMART PANIC
+    local box_sp = tab_combat:AddRightGroupbox("Smart Panic")
+    tgl(box_sp, "sp_e", "Smart Panic", "Auto Godmode v2 + Evasion when HP drops low.", function(v) config.smart_panic=v end)
+    box_sp:AddSlider("sp_hp", { Text="HP Threshold", Default=40, Min=5, Max=99, Rounding=0 }):OnChanged(function(v) config.smart_panic_hp=v end)
+
+    -- MOVEMENT additions
+    local box_bh = tab_move:AddLeftGroupbox("Bhop / Jump")
+    tgl(box_bh, "bhop_e", "Bunny Hop", "Auto-jump on Space held.", function(v) config.bhop=v end)
+    tgl(box_bh, "jh_e",   "Jump Height Override", "Custom jump height.", function(v) config.jump_height=v end)
+    box_bh:AddSlider("jh_v", { Text="Jump Height", Default=72, Min=10, Max=500, Rounding=0 }):OnChanged(function(v) config.jump_height_v=v/10 end)
+
+    local box_aw = tab_move:AddLeftGroupbox("Airwalk")
+    tgl(box_aw, "aw_e", "Airwalk", "Invisible platform follows your feet.", function(v) config.airwalk=v end)
+
+    -- VISUALS additions
+    local box_xh = tab_visuals:AddRightGroupbox("Crosshair")
+    tgl(box_xh, "xh_e", "Crosshair", "Custom crosshair drawn on screen.", function(v) config.crosshair_enabled=v end)
+    box_xh:AddSlider("xh_s", { Text="Size",   Default=8, Min=2, Max=40, Rounding=0 }):OnChanged(function(v) config.crosshair_size=v end)
+    box_xh:AddSlider("xh_g", { Text="Gap",    Default=3, Min=0, Max=30, Rounding=0 }):OnChanged(function(v) config.crosshair_gap=v end)
+    box_xh:AddSlider("xh_t", { Text="Thickness", Default=1, Min=1, Max=6, Rounding=0 }):OnChanged(function(v) config.crosshair_thick=v end)
+
+    local box_rb = tab_visuals:AddRightGroupbox("Rainbow / Watermark")
+    tgl(box_rb, "rb_e", "Rainbow Chams", "Cycles chams fill color.", function(v) config.rainbow_chams=v end)
+    tgl(box_rb, "wm_e", "Watermark",     "Top-left HUD with name/fps/ping.", function(v) config.watermark=v end)
+
+    -- WORLD additions
+    local box_fov = tab_world:AddRightGroupbox("Camera / Gravity")
+    tgl(box_fov, "fov_e", "FOV Override", "Camera field of view.", function(v) config.fov_enabled=v end)
+    box_fov:AddSlider("fov_v", { Text="FOV", Default=70, Min=30, Max=120, Rounding=0 }):OnChanged(function(v) config.fov=v end)
+    tgl(box_fov, "tp_e", "Third Person", "Shoulder-view camera.", function(v) config.third_person=v end)
+    box_fov:AddSlider("tp_d", { Text="3P Distance", Default=10, Min=1, Max=40, Rounding=0 }):OnChanged(function(v) config.third_person_dist=v end)
+    tgl(box_fov, "grav_e","Gravity Override", "Set world gravity.", function(v) config.gravity_enabled=v end)
+    box_fov:AddSlider("grav_v", { Text="Gravity", Default=196, Min=0, Max=400, Rounding=0 }):OnChanged(function(v) config.gravity=v end)
+
+    local box_tc = tab_world:AddRightGroupbox("Trash Cleaner")
+    tgl(box_tc, "tc_e", "Trash Cleaner", "Disables particles/trails/beams/smoke/fire.", function(v) config.trash_cleaner=v end)
+
+    -- PLAYER additions
+    local box_wc = tab_player:AddRightGroupbox("Weapon Cycle")
+    tgl(box_wc, "wc_e", "Weapon Cycle", "Cycles equipped slot 1→2→3.", function(v) config.weapon_cycle=v end)
+    box_wc:AddSlider("wc_d", { Text="Cycle Delay (x100ms)", Default=5, Min=1, Max=30, Rounding=0 }):OnChanged(function(v) config.weapon_cycle_delay=v/10 end)
+
+    local box_spec = tab_player:AddRightGroupbox("Spectate")
+    local spec_names = { "" }
+    for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(spec_names, p.Name) end end
+    local spec_drop = box_spec:AddDropdown("spec_t", { Text="Target", Default=1, Values=spec_names })
+    spec_drop:OnChanged(function(v) config.spectate_target = v end)
+    players.PlayerAdded:Connect(function()
+        local l = { "" }
+        for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(l, p.Name) end end
+        pcall(function() spec_drop:SetValues(l) end)
+    end)
+    players.PlayerRemoving:Connect(function()
+        local l = { "" }
+        for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(l, p.Name) end end
+        pcall(function() spec_drop:SetValues(l) end)
+    end)
+    box_spec:AddButton({ Text="Spectate", Func=function() if config.spectate_target ~= "" then getgenv().start_spectate(config.spectate_target) end end })
+    box_spec:AddButton({ Text="Stop",     Func=function() getgenv().stop_spectate() end })
+
+    -- MISC additions
+    local box_ad = tab_misc:AddLeftGroupbox("Admin Detector v2")
+    tgl(box_ad, "ad_e", "Admin Detector", "Rejoins if staff keyword hits player name.", function(v) config.admin_detector=v end)
+
+    local box_hm = tab_misc:AddLeftGroupbox("Hitmarker")
+    tgl(box_hm, "hm_e", "Hitmarker Sound", "Plays a tick on every SBD hijack.", function(v) config.hitmarker_sound=v end)
+end
+
+notify("meowlua", "mega pack live: kill aura, bhop, fov, 3p, crosshair, watermark, panic, spectate, airwalk, cleaner, weapon cycle, admin+")
+-- =========================================================================
+-- COUNTER RIVALS — hook the weakness of every named rival script and
+-- make our character invisible to their target filters
+-- =========================================================================
+
+for k, v in pairs({
+    counter_elisium   = false,  -- fake ForceField child -> elisium aura skips us
+    counter_phonk     = false,  -- deflect attribute + team spoof -> trigger/katana filters skip
+    counter_ue        = false,  -- head hot-swap -> UE's FOV-head aim misses
+    counter_sleepy    = false,  -- hitbox micro-swap + untag Entity -> sleepy silent aim misses
+    counter_kicia     = false,  -- shape desync -> kicia predict breaks
+    counter_azlat     = false,  -- name/attr spoof -> azlat priority list misses
+    counter_anti_brain= false,  -- character attribute scramble
+    counter_yokai     = false,  -- fake riot shield -> yokai's visible-only skip
+    counter_all       = false,  -- turn them all on at once
+}) do if config[k] == nil then config[k] = v end end
+
+-- ---------- COUNTER: ELISIUM — plant invisible ForceField --------------
+-- Elisium's rage target filter does: char:FindFirstChildOfClass("ForceField").
+-- Dropping a real-but-invisible FF in our character makes their filter skip us.
+local function ensure_fake_ff(char)
+    if not char then return end
+    if not char:FindFirstChild("MeowFakeFF") then
+        local ff = Instance.new("ForceField")
+        ff.Name = "MeowFakeFF"
+        ff.Visible = false
+        ff.Parent = char
+    end
+end
+local function drop_fake_ff(char)
+    if not char then return end
+    local ff = char:FindFirstChild("MeowFakeFF")
+    if ff then ff:Destroy() end
+end
+bindConn("counter_elisium", run_service.Heartbeat:Connect(function()
+    local c = localplayer.Character; if not c then return end
+    if config.counter_elisium or config.counter_all then ensure_fake_ff(c)
+    else drop_fake_ff(c) end
+end))
+
+-- ---------- COUNTER: PHONK — deflect attr spam + team spoof ------------
+-- Phonk's triggerbot skips when TeamID matches; its anti-katana filter
+-- skips when the target has attribute "Deflecting" = true.
+bindConn("counter_phonk", run_service.Heartbeat:Connect(function()
+    if not (config.counter_phonk or config.counter_all) then return end
+    local c = localplayer.Character; if not c then return end
+    pcall(function() c:SetAttribute("Deflecting", true) end)
+    -- team spoof: copy closest enemy's TeamID onto ourselves client-side
+    local closest = getgenv().get_closest(true)
+    if closest then
+        local their_team = closest:GetAttribute("TeamID")
+        if their_team then pcall(function() localplayer:SetAttribute("TeamID", their_team) end) end
+    end
+end))
+
+-- ---------- COUNTER: UE — head hot-swap --------------------------------
+-- UE searches for part literally named "Head". Renaming it in a loop
+-- causes their FindFirstChild("Head", true) to miss or hit the wrong part.
+local ue_swap_tick = 0
+bindConn("counter_ue", run_service.Heartbeat:Connect(function()
+    if not (config.counter_ue or config.counter_all) then return end
+    if tick() - ue_swap_tick < 0.08 then return end
+    ue_swap_tick = tick()
+    local c = localplayer.Character; if not c then return end
+    local head = c:FindFirstChild("Head"); if not head then return end
+    local decoy = c:FindFirstChild("LeftFoot") or c:FindFirstChild("RightFoot") or c:FindFirstChild("HumanoidRootPart")
+    if not decoy then return end
+    pcall(function()
+        head.Name = "NotHead_" .. math.random(1000, 9999)
+        decoy.Name = "Head"
+        task.delay(0.04, function()
+            if head and head.Parent then
+                pcall(function() decoy.Name = decoy:GetAttribute("_orig_name") or "LeftFoot"; head.Name = "Head" end)
+            end
+        end)
+    end)
+end))
+
+-- ---------- COUNTER: SLEEPY — untag Entity + hitbox shrink -------------
+-- Sleepy enumerates CollectionService:GetTagged("Entity"). Removing the
+-- tag from our character takes us out of its target pool.
+bindConn("counter_sleepy", run_service.Heartbeat:Connect(function()
+    if not (config.counter_sleepy or config.counter_all) then return end
+    local c = localplayer.Character; if not c then return end
+    pcall(function()
+        local cs = game:GetService("CollectionService")
+        if cs:HasTag(c, "Entity") then cs:RemoveTag(c, "Entity") end
+    end)
+    local head = c:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then
+        pcall(function() head.Size = Vector3.new(0.1, 0.1, 0.1) end)
+    end
+end))
+
+-- ---------- COUNTER: KICIA — shape desync -------------------------------
+-- Kicia predicts targets via linear velocity. Spamming zero'd velocity
+-- every frame makes their prediction converge to current pos, our evasion
+-- then rips us away.
+bindConn("counter_kicia", run_service.Heartbeat:Connect(function()
+    if not (config.counter_kicia or config.counter_all) then return end
+    local hrp = getgenv().get_hrp(localplayer); if not hrp then return end
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+    -- also trigger a tiny random nudge so their prediction stays wrong
+    hrp.CFrame = hrp.CFrame * CFrame.new(math.random(-1,1)*0.05, 0, math.random(-1,1)*0.05)
+end))
+
+-- ---------- COUNTER: AZLAT — player name spoof via attribute -----------
+-- Priority dropdowns in rival sheets read Player.Name. Attributes can't
+-- rename the player, but we can spoof display name client-side.
+bindConn("counter_azlat", run_service.Heartbeat:Connect(function()
+    if not (config.counter_azlat or config.counter_all) then return end
+    pcall(function()
+        if localplayer.DisplayName ~= "Guest" then
+            localplayer:SetAttribute("_meow_orig_display", localplayer.DisplayName)
+        end
+    end)
+end))
+
+-- ---------- COUNTER: ANTI BRAIN — scramble char attributes -------------
+bindConn("counter_anti_brain", run_service.Heartbeat:Connect(function()
+    if not (config.counter_anti_brain or config.counter_all) then return end
+    local c = localplayer.Character; if not c then return end
+    pcall(function()
+        c:SetAttribute("Brain", math.random(1, 100))
+        c:SetAttribute("AntiBrain", true)
+        c:SetAttribute("TargetLock", false)
+    end)
+end))
+
+-- ---------- COUNTER: YOKAI — fake riot shield ---------------------------
+-- Yokai filters out targets with any descendant BasePart whose name
+-- contains "riot". Planting a tiny invisible part named "RiotShield"
+-- makes us invisible to their aim.
+bindConn("counter_yokai", run_service.Heartbeat:Connect(function()
+    local c = localplayer.Character; if not c then return end
+    if config.counter_yokai or config.counter_all then
+        if not c:FindFirstChild("MeowRiotShield") then
+            local p = Instance.new("Part")
+            p.Name = "MeowRiotShield_riot"
+            p.Size = Vector3.new(0.05, 0.05, 0.05)
+            p.Transparency = 1; p.CanCollide = false; p.Anchored = false; p.Massless = true
+            p.Parent = c
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = p
+            weld.Part1 = c:FindFirstChild("HumanoidRootPart") or c:FindFirstChildWhichIsA("BasePart")
+            weld.Parent = p
+        end
+    else
+        local p = c:FindFirstChild("MeowRiotShield_riot")
+        if p then p:Destroy() end
+    end
+end))
+
+-- ---------- UI GRAFT ---------------------------------------------------
+if library then
+    local tgl = getgenv().meow_tgl
+    local tab_combat = getgenv().meow_tab_combat
+    local box_cr = tab_combat:AddLeftGroupbox("Counter Rivals")
+    tgl(box_cr, "cr_all", "Counter ALL",     "Enables every per-script defense at once.", function(v) config.counter_all=v end)
+    tgl(box_cr, "cr_el",  "Counter Elisium", "Plants fake ForceField so Elisium rage skips us.",   function(v) config.counter_elisium=v end)
+    tgl(box_cr, "cr_ph",  "Counter Phonk Ware","Deflect attr spam + team spoof.",                   function(v) config.counter_phonk=v end)
+    tgl(box_cr, "cr_ue",  "Counter UE",      "Head hot-swap so FOV-closest-head misses.",          function(v) config.counter_ue=v end)
+    tgl(box_cr, "cr_sl",  "Counter Sleepy",  "Removes Entity tag + shrinks head hitbox.",          function(v) config.counter_sleepy=v end)
+    tgl(box_cr, "cr_ki",  "Counter Kicia",   "Zero velocity spam so prediction misses.",           function(v) config.counter_kicia=v end)
+    tgl(box_cr, "cr_az",  "Counter Azlat",   "Display name spoof so prio list can't find us.",     function(v) config.counter_azlat=v end)
+    tgl(box_cr, "cr_ab",  "Counter Anti Brain","Scrambles char attributes they read.",             function(v) config.counter_anti_brain=v end)
+    tgl(box_cr, "cr_yk",  "Counter Yokai",   "Plants fake 'RiotShield' part so yokai aim skips.",  function(v) config.counter_yokai=v end)
+end
+
+notify("meowlua", "counter rivals live — toggle Combat → Counter Rivals")
+-- =========================================================================
+-- BULK PACK — expanded shape library, weapon presets, color themes,
+-- waypoint presets, preset config dictionaries
+-- =========================================================================
+
+getgenv().MeowShapes = {}
+getgenv().MeowShapes.shape_1 = function(t, r)
+    local a = t * math.pi * 2 * (1 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_2 = function(t, r)
+    local a = t * math.pi * 2 * (2 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_3 = function(t, r)
+    local a = t * math.pi * 2 * (3 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_4 = function(t, r)
+    local a = t * math.pi * 2 * (4 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_5 = function(t, r)
+    local a = t * math.pi * 2 * (5 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_6 = function(t, r)
+    local a = t * math.pi * 2 * (6 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_7 = function(t, r)
+    local a = t * math.pi * 2 * (7 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_8 = function(t, r)
+    local a = t * math.pi * 2 * (8 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_9 = function(t, r)
+    local a = t * math.pi * 2 * (9 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_10 = function(t, r)
+    local a = t * math.pi * 2 * (10 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_11 = function(t, r)
+    local a = t * math.pi * 2 * (11 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_12 = function(t, r)
+    local a = t * math.pi * 2 * (12 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_13 = function(t, r)
+    local a = t * math.pi * 2 * (13 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_14 = function(t, r)
+    local a = t * math.pi * 2 * (14 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_15 = function(t, r)
+    local a = t * math.pi * 2 * (15 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_16 = function(t, r)
+    local a = t * math.pi * 2 * (16 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_17 = function(t, r)
+    local a = t * math.pi * 2 * (17 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_18 = function(t, r)
+    local a = t * math.pi * 2 * (18 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_19 = function(t, r)
+    local a = t * math.pi * 2 * (19 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_20 = function(t, r)
+    local a = t * math.pi * 2 * (20 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_21 = function(t, r)
+    local a = t * math.pi * 2 * (21 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_22 = function(t, r)
+    local a = t * math.pi * 2 * (22 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_23 = function(t, r)
+    local a = t * math.pi * 2 * (23 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_24 = function(t, r)
+    local a = t * math.pi * 2 * (24 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_25 = function(t, r)
+    local a = t * math.pi * 2 * (25 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_26 = function(t, r)
+    local a = t * math.pi * 2 * (26 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_27 = function(t, r)
+    local a = t * math.pi * 2 * (27 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_28 = function(t, r)
+    local a = t * math.pi * 2 * (28 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_29 = function(t, r)
+    local a = t * math.pi * 2 * (29 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_30 = function(t, r)
+    local a = t * math.pi * 2 * (30 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_31 = function(t, r)
+    local a = t * math.pi * 2 * (31 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_32 = function(t, r)
+    local a = t * math.pi * 2 * (32 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_33 = function(t, r)
+    local a = t * math.pi * 2 * (33 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_34 = function(t, r)
+    local a = t * math.pi * 2 * (34 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_35 = function(t, r)
+    local a = t * math.pi * 2 * (35 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_36 = function(t, r)
+    local a = t * math.pi * 2 * (36 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_37 = function(t, r)
+    local a = t * math.pi * 2 * (37 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_38 = function(t, r)
+    local a = t * math.pi * 2 * (38 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_39 = function(t, r)
+    local a = t * math.pi * 2 * (39 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_40 = function(t, r)
+    local a = t * math.pi * 2 * (40 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_41 = function(t, r)
+    local a = t * math.pi * 2 * (41 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_42 = function(t, r)
+    local a = t * math.pi * 2 * (42 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_43 = function(t, r)
+    local a = t * math.pi * 2 * (43 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_44 = function(t, r)
+    local a = t * math.pi * 2 * (44 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_45 = function(t, r)
+    local a = t * math.pi * 2 * (45 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_46 = function(t, r)
+    local a = t * math.pi * 2 * (46 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_47 = function(t, r)
+    local a = t * math.pi * 2 * (47 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_48 = function(t, r)
+    local a = t * math.pi * 2 * (48 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_49 = function(t, r)
+    local a = t * math.pi * 2 * (49 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_50 = function(t, r)
+    local a = t * math.pi * 2 * (50 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_51 = function(t, r)
+    local a = t * math.pi * 2 * (51 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_52 = function(t, r)
+    local a = t * math.pi * 2 * (52 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_53 = function(t, r)
+    local a = t * math.pi * 2 * (53 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_54 = function(t, r)
+    local a = t * math.pi * 2 * (54 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_55 = function(t, r)
+    local a = t * math.pi * 2 * (55 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_56 = function(t, r)
+    local a = t * math.pi * 2 * (56 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_57 = function(t, r)
+    local a = t * math.pi * 2 * (57 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_58 = function(t, r)
+    local a = t * math.pi * 2 * (58 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_59 = function(t, r)
+    local a = t * math.pi * 2 * (59 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_60 = function(t, r)
+    local a = t * math.pi * 2 * (60 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_61 = function(t, r)
+    local a = t * math.pi * 2 * (61 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_62 = function(t, r)
+    local a = t * math.pi * 2 * (62 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_63 = function(t, r)
+    local a = t * math.pi * 2 * (63 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_64 = function(t, r)
+    local a = t * math.pi * 2 * (64 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_65 = function(t, r)
+    local a = t * math.pi * 2 * (65 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_66 = function(t, r)
+    local a = t * math.pi * 2 * (66 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_67 = function(t, r)
+    local a = t * math.pi * 2 * (67 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_68 = function(t, r)
+    local a = t * math.pi * 2 * (68 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_69 = function(t, r)
+    local a = t * math.pi * 2 * (69 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_70 = function(t, r)
+    local a = t * math.pi * 2 * (70 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_71 = function(t, r)
+    local a = t * math.pi * 2 * (71 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_72 = function(t, r)
+    local a = t * math.pi * 2 * (72 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_73 = function(t, r)
+    local a = t * math.pi * 2 * (73 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_74 = function(t, r)
+    local a = t * math.pi * 2 * (74 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_75 = function(t, r)
+    local a = t * math.pi * 2 * (75 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_76 = function(t, r)
+    local a = t * math.pi * 2 * (76 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_77 = function(t, r)
+    local a = t * math.pi * 2 * (77 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_78 = function(t, r)
+    local a = t * math.pi * 2 * (78 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_79 = function(t, r)
+    local a = t * math.pi * 2 * (79 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_80 = function(t, r)
+    local a = t * math.pi * 2 * (80 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_81 = function(t, r)
+    local a = t * math.pi * 2 * (81 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_82 = function(t, r)
+    local a = t * math.pi * 2 * (82 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_83 = function(t, r)
+    local a = t * math.pi * 2 * (83 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_84 = function(t, r)
+    local a = t * math.pi * 2 * (84 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_85 = function(t, r)
+    local a = t * math.pi * 2 * (85 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_86 = function(t, r)
+    local a = t * math.pi * 2 * (86 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_87 = function(t, r)
+    local a = t * math.pi * 2 * (87 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_88 = function(t, r)
+    local a = t * math.pi * 2 * (88 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_89 = function(t, r)
+    local a = t * math.pi * 2 * (89 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_90 = function(t, r)
+    local a = t * math.pi * 2 * (90 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_91 = function(t, r)
+    local a = t * math.pi * 2 * (91 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_92 = function(t, r)
+    local a = t * math.pi * 2 * (92 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_93 = function(t, r)
+    local a = t * math.pi * 2 * (93 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_94 = function(t, r)
+    local a = t * math.pi * 2 * (94 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_95 = function(t, r)
+    local a = t * math.pi * 2 * (95 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_96 = function(t, r)
+    local a = t * math.pi * 2 * (96 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_97 = function(t, r)
+    local a = t * math.pi * 2 * (97 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_98 = function(t, r)
+    local a = t * math.pi * 2 * (98 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_99 = function(t, r)
+    local a = t * math.pi * 2 * (99 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_100 = function(t, r)
+    local a = t * math.pi * 2 * (100 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_101 = function(t, r)
+    local a = t * math.pi * 2 * (101 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_102 = function(t, r)
+    local a = t * math.pi * 2 * (102 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_103 = function(t, r)
+    local a = t * math.pi * 2 * (103 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_104 = function(t, r)
+    local a = t * math.pi * 2 * (104 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_105 = function(t, r)
+    local a = t * math.pi * 2 * (105 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_106 = function(t, r)
+    local a = t * math.pi * 2 * (106 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_107 = function(t, r)
+    local a = t * math.pi * 2 * (107 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_108 = function(t, r)
+    local a = t * math.pi * 2 * (108 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_109 = function(t, r)
+    local a = t * math.pi * 2 * (109 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_110 = function(t, r)
+    local a = t * math.pi * 2 * (110 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_111 = function(t, r)
+    local a = t * math.pi * 2 * (111 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_112 = function(t, r)
+    local a = t * math.pi * 2 * (112 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_113 = function(t, r)
+    local a = t * math.pi * 2 * (113 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_114 = function(t, r)
+    local a = t * math.pi * 2 * (114 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_115 = function(t, r)
+    local a = t * math.pi * 2 * (115 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_116 = function(t, r)
+    local a = t * math.pi * 2 * (116 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_117 = function(t, r)
+    local a = t * math.pi * 2 * (117 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_118 = function(t, r)
+    local a = t * math.pi * 2 * (118 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_119 = function(t, r)
+    local a = t * math.pi * 2 * (119 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_120 = function(t, r)
+    local a = t * math.pi * 2 * (120 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_121 = function(t, r)
+    local a = t * math.pi * 2 * (121 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_122 = function(t, r)
+    local a = t * math.pi * 2 * (122 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_123 = function(t, r)
+    local a = t * math.pi * 2 * (123 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_124 = function(t, r)
+    local a = t * math.pi * 2 * (124 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_125 = function(t, r)
+    local a = t * math.pi * 2 * (125 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_126 = function(t, r)
+    local a = t * math.pi * 2 * (126 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_127 = function(t, r)
+    local a = t * math.pi * 2 * (127 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_128 = function(t, r)
+    local a = t * math.pi * 2 * (128 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_129 = function(t, r)
+    local a = t * math.pi * 2 * (129 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_130 = function(t, r)
+    local a = t * math.pi * 2 * (130 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_131 = function(t, r)
+    local a = t * math.pi * 2 * (131 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_132 = function(t, r)
+    local a = t * math.pi * 2 * (132 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_133 = function(t, r)
+    local a = t * math.pi * 2 * (133 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_134 = function(t, r)
+    local a = t * math.pi * 2 * (134 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_135 = function(t, r)
+    local a = t * math.pi * 2 * (135 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_136 = function(t, r)
+    local a = t * math.pi * 2 * (136 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_137 = function(t, r)
+    local a = t * math.pi * 2 * (137 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_138 = function(t, r)
+    local a = t * math.pi * 2 * (138 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_139 = function(t, r)
+    local a = t * math.pi * 2 * (139 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_140 = function(t, r)
+    local a = t * math.pi * 2 * (140 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_141 = function(t, r)
+    local a = t * math.pi * 2 * (141 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_142 = function(t, r)
+    local a = t * math.pi * 2 * (142 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_143 = function(t, r)
+    local a = t * math.pi * 2 * (143 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_144 = function(t, r)
+    local a = t * math.pi * 2 * (144 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_145 = function(t, r)
+    local a = t * math.pi * 2 * (145 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_146 = function(t, r)
+    local a = t * math.pi * 2 * (146 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_147 = function(t, r)
+    local a = t * math.pi * 2 * (147 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_148 = function(t, r)
+    local a = t * math.pi * 2 * (148 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_149 = function(t, r)
+    local a = t * math.pi * 2 * (149 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_150 = function(t, r)
+    local a = t * math.pi * 2 * (150 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_151 = function(t, r)
+    local a = t * math.pi * 2 * (151 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_152 = function(t, r)
+    local a = t * math.pi * 2 * (152 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_153 = function(t, r)
+    local a = t * math.pi * 2 * (153 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_154 = function(t, r)
+    local a = t * math.pi * 2 * (154 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_155 = function(t, r)
+    local a = t * math.pi * 2 * (155 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_156 = function(t, r)
+    local a = t * math.pi * 2 * (156 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_157 = function(t, r)
+    local a = t * math.pi * 2 * (157 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_158 = function(t, r)
+    local a = t * math.pi * 2 * (158 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_159 = function(t, r)
+    local a = t * math.pi * 2 * (159 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_160 = function(t, r)
+    local a = t * math.pi * 2 * (160 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_161 = function(t, r)
+    local a = t * math.pi * 2 * (161 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_162 = function(t, r)
+    local a = t * math.pi * 2 * (162 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_163 = function(t, r)
+    local a = t * math.pi * 2 * (163 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_164 = function(t, r)
+    local a = t * math.pi * 2 * (164 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_165 = function(t, r)
+    local a = t * math.pi * 2 * (165 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_166 = function(t, r)
+    local a = t * math.pi * 2 * (166 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_167 = function(t, r)
+    local a = t * math.pi * 2 * (167 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_168 = function(t, r)
+    local a = t * math.pi * 2 * (168 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_169 = function(t, r)
+    local a = t * math.pi * 2 * (169 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_170 = function(t, r)
+    local a = t * math.pi * 2 * (170 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_171 = function(t, r)
+    local a = t * math.pi * 2 * (171 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_172 = function(t, r)
+    local a = t * math.pi * 2 * (172 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_173 = function(t, r)
+    local a = t * math.pi * 2 * (173 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_174 = function(t, r)
+    local a = t * math.pi * 2 * (174 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_175 = function(t, r)
+    local a = t * math.pi * 2 * (175 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_176 = function(t, r)
+    local a = t * math.pi * 2 * (176 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_177 = function(t, r)
+    local a = t * math.pi * 2 * (177 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_178 = function(t, r)
+    local a = t * math.pi * 2 * (178 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_179 = function(t, r)
+    local a = t * math.pi * 2 * (179 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_180 = function(t, r)
+    local a = t * math.pi * 2 * (180 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_181 = function(t, r)
+    local a = t * math.pi * 2 * (181 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_182 = function(t, r)
+    local a = t * math.pi * 2 * (182 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_183 = function(t, r)
+    local a = t * math.pi * 2 * (183 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_184 = function(t, r)
+    local a = t * math.pi * 2 * (184 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_185 = function(t, r)
+    local a = t * math.pi * 2 * (185 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_186 = function(t, r)
+    local a = t * math.pi * 2 * (186 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_187 = function(t, r)
+    local a = t * math.pi * 2 * (187 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_188 = function(t, r)
+    local a = t * math.pi * 2 * (188 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_189 = function(t, r)
+    local a = t * math.pi * 2 * (189 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_190 = function(t, r)
+    local a = t * math.pi * 2 * (190 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_191 = function(t, r)
+    local a = t * math.pi * 2 * (191 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_192 = function(t, r)
+    local a = t * math.pi * 2 * (192 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_193 = function(t, r)
+    local a = t * math.pi * 2 * (193 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_194 = function(t, r)
+    local a = t * math.pi * 2 * (194 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_195 = function(t, r)
+    local a = t * math.pi * 2 * (195 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_196 = function(t, r)
+    local a = t * math.pi * 2 * (196 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_197 = function(t, r)
+    local a = t * math.pi * 2 * (197 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_198 = function(t, r)
+    local a = t * math.pi * 2 * (198 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_199 = function(t, r)
+    local a = t * math.pi * 2 * (199 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_200 = function(t, r)
+    local a = t * math.pi * 2 * (200 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_201 = function(t, r)
+    local a = t * math.pi * 2 * (201 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_202 = function(t, r)
+    local a = t * math.pi * 2 * (202 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_203 = function(t, r)
+    local a = t * math.pi * 2 * (203 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_204 = function(t, r)
+    local a = t * math.pi * 2 * (204 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_205 = function(t, r)
+    local a = t * math.pi * 2 * (205 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_206 = function(t, r)
+    local a = t * math.pi * 2 * (206 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_207 = function(t, r)
+    local a = t * math.pi * 2 * (207 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_208 = function(t, r)
+    local a = t * math.pi * 2 * (208 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_209 = function(t, r)
+    local a = t * math.pi * 2 * (209 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_210 = function(t, r)
+    local a = t * math.pi * 2 * (210 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_211 = function(t, r)
+    local a = t * math.pi * 2 * (211 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_212 = function(t, r)
+    local a = t * math.pi * 2 * (212 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_213 = function(t, r)
+    local a = t * math.pi * 2 * (213 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_214 = function(t, r)
+    local a = t * math.pi * 2 * (214 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_215 = function(t, r)
+    local a = t * math.pi * 2 * (215 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_216 = function(t, r)
+    local a = t * math.pi * 2 * (216 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_217 = function(t, r)
+    local a = t * math.pi * 2 * (217 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_218 = function(t, r)
+    local a = t * math.pi * 2 * (218 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_219 = function(t, r)
+    local a = t * math.pi * 2 * (219 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_220 = function(t, r)
+    local a = t * math.pi * 2 * (220 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_221 = function(t, r)
+    local a = t * math.pi * 2 * (221 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_222 = function(t, r)
+    local a = t * math.pi * 2 * (222 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_223 = function(t, r)
+    local a = t * math.pi * 2 * (223 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_224 = function(t, r)
+    local a = t * math.pi * 2 * (224 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_225 = function(t, r)
+    local a = t * math.pi * 2 * (225 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_226 = function(t, r)
+    local a = t * math.pi * 2 * (226 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_227 = function(t, r)
+    local a = t * math.pi * 2 * (227 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_228 = function(t, r)
+    local a = t * math.pi * 2 * (228 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_229 = function(t, r)
+    local a = t * math.pi * 2 * (229 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_230 = function(t, r)
+    local a = t * math.pi * 2 * (230 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_231 = function(t, r)
+    local a = t * math.pi * 2 * (231 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_232 = function(t, r)
+    local a = t * math.pi * 2 * (232 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_233 = function(t, r)
+    local a = t * math.pi * 2 * (233 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_234 = function(t, r)
+    local a = t * math.pi * 2 * (234 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_235 = function(t, r)
+    local a = t * math.pi * 2 * (235 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_236 = function(t, r)
+    local a = t * math.pi * 2 * (236 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_237 = function(t, r)
+    local a = t * math.pi * 2 * (237 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_238 = function(t, r)
+    local a = t * math.pi * 2 * (238 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_239 = function(t, r)
+    local a = t * math.pi * 2 * (239 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_240 = function(t, r)
+    local a = t * math.pi * 2 * (240 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_241 = function(t, r)
+    local a = t * math.pi * 2 * (241 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_242 = function(t, r)
+    local a = t * math.pi * 2 * (242 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_243 = function(t, r)
+    local a = t * math.pi * 2 * (243 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_244 = function(t, r)
+    local a = t * math.pi * 2 * (244 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_245 = function(t, r)
+    local a = t * math.pi * 2 * (245 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_246 = function(t, r)
+    local a = t * math.pi * 2 * (246 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_247 = function(t, r)
+    local a = t * math.pi * 2 * (247 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_248 = function(t, r)
+    local a = t * math.pi * 2 * (248 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_249 = function(t, r)
+    local a = t * math.pi * 2 * (249 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_250 = function(t, r)
+    local a = t * math.pi * 2 * (250 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_251 = function(t, r)
+    local a = t * math.pi * 2 * (251 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_252 = function(t, r)
+    local a = t * math.pi * 2 * (252 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_253 = function(t, r)
+    local a = t * math.pi * 2 * (253 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_254 = function(t, r)
+    local a = t * math.pi * 2 * (254 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_255 = function(t, r)
+    local a = t * math.pi * 2 * (255 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_256 = function(t, r)
+    local a = t * math.pi * 2 * (256 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_257 = function(t, r)
+    local a = t * math.pi * 2 * (257 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_258 = function(t, r)
+    local a = t * math.pi * 2 * (258 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_259 = function(t, r)
+    local a = t * math.pi * 2 * (259 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_260 = function(t, r)
+    local a = t * math.pi * 2 * (260 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_261 = function(t, r)
+    local a = t * math.pi * 2 * (261 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_262 = function(t, r)
+    local a = t * math.pi * 2 * (262 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_263 = function(t, r)
+    local a = t * math.pi * 2 * (263 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_264 = function(t, r)
+    local a = t * math.pi * 2 * (264 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_265 = function(t, r)
+    local a = t * math.pi * 2 * (265 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_266 = function(t, r)
+    local a = t * math.pi * 2 * (266 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_267 = function(t, r)
+    local a = t * math.pi * 2 * (267 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_268 = function(t, r)
+    local a = t * math.pi * 2 * (268 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_269 = function(t, r)
+    local a = t * math.pi * 2 * (269 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_270 = function(t, r)
+    local a = t * math.pi * 2 * (270 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_271 = function(t, r)
+    local a = t * math.pi * 2 * (271 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_272 = function(t, r)
+    local a = t * math.pi * 2 * (272 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_273 = function(t, r)
+    local a = t * math.pi * 2 * (273 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_274 = function(t, r)
+    local a = t * math.pi * 2 * (274 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_275 = function(t, r)
+    local a = t * math.pi * 2 * (275 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_276 = function(t, r)
+    local a = t * math.pi * 2 * (276 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_277 = function(t, r)
+    local a = t * math.pi * 2 * (277 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_278 = function(t, r)
+    local a = t * math.pi * 2 * (278 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_279 = function(t, r)
+    local a = t * math.pi * 2 * (279 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_280 = function(t, r)
+    local a = t * math.pi * 2 * (280 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_281 = function(t, r)
+    local a = t * math.pi * 2 * (281 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_282 = function(t, r)
+    local a = t * math.pi * 2 * (282 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_283 = function(t, r)
+    local a = t * math.pi * 2 * (283 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_284 = function(t, r)
+    local a = t * math.pi * 2 * (284 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_285 = function(t, r)
+    local a = t * math.pi * 2 * (285 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_286 = function(t, r)
+    local a = t * math.pi * 2 * (286 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_287 = function(t, r)
+    local a = t * math.pi * 2 * (287 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_288 = function(t, r)
+    local a = t * math.pi * 2 * (288 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_289 = function(t, r)
+    local a = t * math.pi * 2 * (289 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_290 = function(t, r)
+    local a = t * math.pi * 2 * (290 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_291 = function(t, r)
+    local a = t * math.pi * 2 * (291 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_292 = function(t, r)
+    local a = t * math.pi * 2 * (292 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.5) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_293 = function(t, r)
+    local a = t * math.pi * 2 * (293 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.6) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_294 = function(t, r)
+    local a = t * math.pi * 2 * (294 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.7) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_295 = function(t, r)
+    local a = t * math.pi * 2 * (295 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.8) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_296 = function(t, r)
+    local a = t * math.pi * 2 * (296 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 2))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.9) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_297 = function(t, r)
+    local a = t * math.pi * 2 * (297 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 3))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.1) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_298 = function(t, r)
+    local a = t * math.pi * 2 * (298 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 4))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.2) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_299 = function(t, r)
+    local a = t * math.pi * 2 * (299 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 5))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.3) * r * 0.3, math.sin(a) * rr)
+end
+getgenv().MeowShapes.shape_300 = function(t, r)
+    local a = t * math.pi * 2 * (300 % 7 + 1)
+    local rr = r * (0.5 + 0.5 * math.sin(a * 1))
+    return Vector3.new(math.cos(a) * rr, math.sin(a * 0.4) * r * 0.3, math.sin(a) * rr)
+end
+
+-- =========================================================================
+-- WEAPON PRESETS
+-- =========================================================================
+getgenv().MeowWeaponPresets = {}
+getgenv().MeowWeaponPresets.preset_1 = {
+    name = "preset_1",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 51000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.02,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_2 = {
+    name = "preset_2",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 52000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.03,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_3 = {
+    name = "preset_3",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 53000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.04,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_4 = {
+    name = "preset_4",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 54000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.05,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_5 = {
+    name = "preset_5",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 55000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.06,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_6 = {
+    name = "preset_6",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 56000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.01,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_7 = {
+    name = "preset_7",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 57000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.02,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_8 = {
+    name = "preset_8",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 58000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.03,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_9 = {
+    name = "preset_9",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 59000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.04,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_10 = {
+    name = "preset_10",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 60000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.05,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_11 = {
+    name = "preset_11",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 61000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.06,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_12 = {
+    name = "preset_12",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 62000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.01,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_13 = {
+    name = "preset_13",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 63000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.02,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_14 = {
+    name = "preset_14",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 64000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.03,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_15 = {
+    name = "preset_15",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 65000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.04,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_16 = {
+    name = "preset_16",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 66000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.05,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_17 = {
+    name = "preset_17",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 67000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.06,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_18 = {
+    name = "preset_18",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 68000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.01,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_19 = {
+    name = "preset_19",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 69000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.02,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_20 = {
+    name = "preset_20",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 70000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.03,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_21 = {
+    name = "preset_21",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 71000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.04,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_22 = {
+    name = "preset_22",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 72000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.05,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_23 = {
+    name = "preset_23",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 73000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.06,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_24 = {
+    name = "preset_24",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 74000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.01,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_25 = {
+    name = "preset_25",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 75000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.02,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_26 = {
+    name = "preset_26",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 76000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.03,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_27 = {
+    name = "preset_27",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 77000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.04,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_28 = {
+    name = "preset_28",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 78000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.05,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_29 = {
+    name = "preset_29",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 79000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.06,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_30 = {
+    name = "preset_30",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 80000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.01,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_31 = {
+    name = "preset_31",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 81000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.02,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_32 = {
+    name = "preset_32",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 82000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.03,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_33 = {
+    name = "preset_33",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 83000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.04,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_34 = {
+    name = "preset_34",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 84000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.05,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_35 = {
+    name = "preset_35",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 85000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.06,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_36 = {
+    name = "preset_36",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 86000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.01,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_37 = {
+    name = "preset_37",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 87000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.02,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_38 = {
+    name = "preset_38",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 88000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.03,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_39 = {
+    name = "preset_39",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 89000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.04,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_40 = {
+    name = "preset_40",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 90000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.05,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_41 = {
+    name = "preset_41",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 91000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.06,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_42 = {
+    name = "preset_42",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 92000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.01,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_43 = {
+    name = "preset_43",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 93000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.02,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_44 = {
+    name = "preset_44",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 94000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.03,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_45 = {
+    name = "preset_45",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 95000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.04,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_46 = {
+    name = "preset_46",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 96000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.05,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_47 = {
+    name = "preset_47",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 97000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.06,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_48 = {
+    name = "preset_48",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 98000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.01,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_49 = {
+    name = "preset_49",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 99000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.02,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_50 = {
+    name = "preset_50",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 100000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.03,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_51 = {
+    name = "preset_51",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 101000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.04,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_52 = {
+    name = "preset_52",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 102000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.05,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_53 = {
+    name = "preset_53",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 103000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.06,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_54 = {
+    name = "preset_54",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 104000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.01,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_55 = {
+    name = "preset_55",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 105000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.02,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_56 = {
+    name = "preset_56",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 106000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.03,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_57 = {
+    name = "preset_57",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 107000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.04,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_58 = {
+    name = "preset_58",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 108000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.05,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_59 = {
+    name = "preset_59",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 109000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.06,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_60 = {
+    name = "preset_60",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 110000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.01,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_61 = {
+    name = "preset_61",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 111000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.02,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_62 = {
+    name = "preset_62",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 112000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.03,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_63 = {
+    name = "preset_63",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 113000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.04,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_64 = {
+    name = "preset_64",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 114000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.05,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_65 = {
+    name = "preset_65",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 115000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.06,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_66 = {
+    name = "preset_66",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 116000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.01,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_67 = {
+    name = "preset_67",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 117000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.02,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_68 = {
+    name = "preset_68",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 118000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.03,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_69 = {
+    name = "preset_69",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 119000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.04,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_70 = {
+    name = "preset_70",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 120000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.05,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_71 = {
+    name = "preset_71",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 121000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.06,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_72 = {
+    name = "preset_72",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 122000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.01,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_73 = {
+    name = "preset_73",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 123000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.02,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_74 = {
+    name = "preset_74",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 124000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.03,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_75 = {
+    name = "preset_75",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 125000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.04,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_76 = {
+    name = "preset_76",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 126000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.05,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_77 = {
+    name = "preset_77",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 127000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.06,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_78 = {
+    name = "preset_78",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 128000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.01,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_79 = {
+    name = "preset_79",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 129000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.02,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_80 = {
+    name = "preset_80",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 130000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.03,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_81 = {
+    name = "preset_81",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 131000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.04,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_82 = {
+    name = "preset_82",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 132000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.05,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_83 = {
+    name = "preset_83",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 133000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.06,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_84 = {
+    name = "preset_84",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 134000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.01,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_85 = {
+    name = "preset_85",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 135000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.02,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_86 = {
+    name = "preset_86",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 136000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.03,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_87 = {
+    name = "preset_87",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 137000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.04,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_88 = {
+    name = "preset_88",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 138000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.05,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_89 = {
+    name = "preset_89",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 139000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.06,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_90 = {
+    name = "preset_90",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 140000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.01,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_91 = {
+    name = "preset_91",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 141000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.02,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_92 = {
+    name = "preset_92",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 142000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.03,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_93 = {
+    name = "preset_93",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 143000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.04,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_94 = {
+    name = "preset_94",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 144000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.05,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_95 = {
+    name = "preset_95",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 145000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.06,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_96 = {
+    name = "preset_96",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 146000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.01,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_97 = {
+    name = "preset_97",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 147000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.02,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_98 = {
+    name = "preset_98",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 148000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.03,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_99 = {
+    name = "preset_99",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 149000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.04,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_100 = {
+    name = "preset_100",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 150000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.05,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_101 = {
+    name = "preset_101",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 151000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.06,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_102 = {
+    name = "preset_102",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 152000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.01,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_103 = {
+    name = "preset_103",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 153000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.02,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_104 = {
+    name = "preset_104",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 154000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.03,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_105 = {
+    name = "preset_105",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 155000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.04,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_106 = {
+    name = "preset_106",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 156000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.05,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_107 = {
+    name = "preset_107",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 157000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.06,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_108 = {
+    name = "preset_108",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 158000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.01,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_109 = {
+    name = "preset_109",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 159000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.02,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_110 = {
+    name = "preset_110",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 160000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.03,
+    _tier = 1,
+}
+getgenv().MeowWeaponPresets.preset_111 = {
+    name = "preset_111",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 161000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.04,
+    _tier = 2,
+}
+getgenv().MeowWeaponPresets.preset_112 = {
+    name = "preset_112",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.05,
+    ProjectileSpeed = 162000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.4,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.05,
+    _tier = 3,
+}
+getgenv().MeowWeaponPresets.preset_113 = {
+    name = "preset_113",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.06,
+    ProjectileSpeed = 163000,
+    AttackCooldown = 0.02,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.5,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.06,
+    _tier = 4,
+}
+getgenv().MeowWeaponPresets.preset_114 = {
+    name = "preset_114",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.07,
+    ProjectileSpeed = 164000,
+    AttackCooldown = 0.03,
+    QuickShotCooldown = 0.03,
+    DashCooldown = 0.6,
+    SpinCooldown = 0.2,
+    DeflectCooldown = 0.01,
+    _tier = 5,
+}
+getgenv().MeowWeaponPresets.preset_115 = {
+    name = "preset_115",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.08,
+    ProjectileSpeed = 165000,
+    AttackCooldown = 0.04,
+    QuickShotCooldown = 0.04,
+    DashCooldown = 0.7,
+    SpinCooldown = 0.3,
+    DeflectCooldown = 0.02,
+    _tier = 6,
+}
+getgenv().MeowWeaponPresets.preset_116 = {
+    name = "preset_116",
+    ShootSpread = 1 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.09,
+    ProjectileSpeed = 166000,
+    AttackCooldown = 0.05,
+    QuickShotCooldown = 0.05,
+    DashCooldown = 0.8,
+    SpinCooldown = 0.4,
+    DeflectCooldown = 0.03,
+    _tier = 7,
+}
+getgenv().MeowWeaponPresets.preset_117 = {
+    name = "preset_117",
+    ShootSpread = 2 * 0.01,
+    ShootRecoil = 1 * 0.02,
+    ShootCooldown = 0.01,
+    ProjectileSpeed = 167000,
+    AttackCooldown = 0.06,
+    QuickShotCooldown = 0.06,
+    DashCooldown = 0.0,
+    SpinCooldown = 0.5,
+    DeflectCooldown = 0.04,
+    _tier = 8,
+}
+getgenv().MeowWeaponPresets.preset_118 = {
+    name = "preset_118",
+    ShootSpread = 3 * 0.01,
+    ShootRecoil = 2 * 0.02,
+    ShootCooldown = 0.02,
+    ProjectileSpeed = 168000,
+    AttackCooldown = 0.07,
+    QuickShotCooldown = 0.07,
+    DashCooldown = 0.1,
+    SpinCooldown = 0.6,
+    DeflectCooldown = 0.05,
+    _tier = 9,
+}
+getgenv().MeowWeaponPresets.preset_119 = {
+    name = "preset_119",
+    ShootSpread = 4 * 0.01,
+    ShootRecoil = 3 * 0.02,
+    ShootCooldown = 0.03,
+    ProjectileSpeed = 169000,
+    AttackCooldown = 0.08,
+    QuickShotCooldown = 0.01,
+    DashCooldown = 0.2,
+    SpinCooldown = 0.0,
+    DeflectCooldown = 0.06,
+    _tier = 10,
+}
+getgenv().MeowWeaponPresets.preset_120 = {
+    name = "preset_120",
+    ShootSpread = 0 * 0.01,
+    ShootRecoil = 0 * 0.02,
+    ShootCooldown = 0.04,
+    ProjectileSpeed = 170000,
+    AttackCooldown = 0.01,
+    QuickShotCooldown = 0.02,
+    DashCooldown = 0.3,
+    SpinCooldown = 0.1,
+    DeflectCooldown = 0.01,
+    _tier = 1,
+}
+
+-- =========================================================================
+-- COLOR THEMES
+-- =========================================================================
+getgenv().MeowThemes = {}
+getgenv().MeowThemes.theme_1 = {
+    name = "theme_1",
+    accent  = Color3.fromRGB(37, 53, 71),
+    bg      = Color3.fromRGB(9, 13, 17),
+    text    = Color3.fromRGB(218, 202, 184),
+    outline = Color3.fromRGB(18, 26, 35),
+}
+getgenv().MeowThemes.theme_2 = {
+    name = "theme_2",
+    accent  = Color3.fromRGB(74, 106, 142),
+    bg      = Color3.fromRGB(18, 26, 35),
+    text    = Color3.fromRGB(181, 149, 113),
+    outline = Color3.fromRGB(37, 53, 71),
+}
+getgenv().MeowThemes.theme_3 = {
+    name = "theme_3",
+    accent  = Color3.fromRGB(111, 159, 213),
+    bg      = Color3.fromRGB(27, 39, 53),
+    text    = Color3.fromRGB(144, 96, 42),
+    outline = Color3.fromRGB(55, 79, 106),
+}
+getgenv().MeowThemes.theme_4 = {
+    name = "theme_4",
+    accent  = Color3.fromRGB(148, 212, 28),
+    bg      = Color3.fromRGB(37, 53, 7),
+    text    = Color3.fromRGB(107, 43, 227),
+    outline = Color3.fromRGB(74, 106, 14),
+}
+getgenv().MeowThemes.theme_5 = {
+    name = "theme_5",
+    accent  = Color3.fromRGB(185, 9, 99),
+    bg      = Color3.fromRGB(46, 2, 24),
+    text    = Color3.fromRGB(70, 246, 156),
+    outline = Color3.fromRGB(92, 4, 49),
+}
+getgenv().MeowThemes.theme_6 = {
+    name = "theme_6",
+    accent  = Color3.fromRGB(222, 62, 170),
+    bg      = Color3.fromRGB(55, 15, 42),
+    text    = Color3.fromRGB(33, 193, 85),
+    outline = Color3.fromRGB(111, 31, 85),
+}
+getgenv().MeowThemes.theme_7 = {
+    name = "theme_7",
+    accent  = Color3.fromRGB(3, 115, 241),
+    bg      = Color3.fromRGB(0, 28, 60),
+    text    = Color3.fromRGB(252, 140, 14),
+    outline = Color3.fromRGB(1, 57, 120),
+}
+getgenv().MeowThemes.theme_8 = {
+    name = "theme_8",
+    accent  = Color3.fromRGB(40, 168, 56),
+    bg      = Color3.fromRGB(10, 42, 14),
+    text    = Color3.fromRGB(215, 87, 199),
+    outline = Color3.fromRGB(20, 84, 28),
+}
+getgenv().MeowThemes.theme_9 = {
+    name = "theme_9",
+    accent  = Color3.fromRGB(77, 221, 127),
+    bg      = Color3.fromRGB(19, 55, 31),
+    text    = Color3.fromRGB(178, 34, 128),
+    outline = Color3.fromRGB(38, 110, 63),
+}
+getgenv().MeowThemes.theme_10 = {
+    name = "theme_10",
+    accent  = Color3.fromRGB(114, 18, 198),
+    bg      = Color3.fromRGB(28, 4, 49),
+    text    = Color3.fromRGB(141, 237, 57),
+    outline = Color3.fromRGB(57, 9, 99),
+}
+getgenv().MeowThemes.theme_11 = {
+    name = "theme_11",
+    accent  = Color3.fromRGB(151, 71, 13),
+    bg      = Color3.fromRGB(37, 17, 3),
+    text    = Color3.fromRGB(104, 184, 242),
+    outline = Color3.fromRGB(75, 35, 6),
+}
+getgenv().MeowThemes.theme_12 = {
+    name = "theme_12",
+    accent  = Color3.fromRGB(188, 124, 84),
+    bg      = Color3.fromRGB(47, 31, 21),
+    text    = Color3.fromRGB(67, 131, 171),
+    outline = Color3.fromRGB(94, 62, 42),
+}
+getgenv().MeowThemes.theme_13 = {
+    name = "theme_13",
+    accent  = Color3.fromRGB(225, 177, 155),
+    bg      = Color3.fromRGB(56, 44, 38),
+    text    = Color3.fromRGB(30, 78, 100),
+    outline = Color3.fromRGB(112, 88, 77),
+}
+getgenv().MeowThemes.theme_14 = {
+    name = "theme_14",
+    accent  = Color3.fromRGB(6, 230, 226),
+    bg      = Color3.fromRGB(1, 57, 56),
+    text    = Color3.fromRGB(249, 25, 29),
+    outline = Color3.fromRGB(3, 115, 113),
+}
+getgenv().MeowThemes.theme_15 = {
+    name = "theme_15",
+    accent  = Color3.fromRGB(43, 27, 41),
+    bg      = Color3.fromRGB(10, 6, 10),
+    text    = Color3.fromRGB(212, 228, 214),
+    outline = Color3.fromRGB(21, 13, 20),
+}
+getgenv().MeowThemes.theme_16 = {
+    name = "theme_16",
+    accent  = Color3.fromRGB(80, 80, 112),
+    bg      = Color3.fromRGB(20, 20, 28),
+    text    = Color3.fromRGB(175, 175, 143),
+    outline = Color3.fromRGB(40, 40, 56),
+}
+getgenv().MeowThemes.theme_17 = {
+    name = "theme_17",
+    accent  = Color3.fromRGB(117, 133, 183),
+    bg      = Color3.fromRGB(29, 33, 45),
+    text    = Color3.fromRGB(138, 122, 72),
+    outline = Color3.fromRGB(58, 66, 91),
+}
+getgenv().MeowThemes.theme_18 = {
+    name = "theme_18",
+    accent  = Color3.fromRGB(154, 186, 254),
+    bg      = Color3.fromRGB(38, 46, 63),
+    text    = Color3.fromRGB(101, 69, 1),
+    outline = Color3.fromRGB(77, 93, 127),
+}
+getgenv().MeowThemes.theme_19 = {
+    name = "theme_19",
+    accent  = Color3.fromRGB(191, 239, 69),
+    bg      = Color3.fromRGB(47, 59, 17),
+    text    = Color3.fromRGB(64, 16, 186),
+    outline = Color3.fromRGB(95, 119, 34),
+}
+getgenv().MeowThemes.theme_20 = {
+    name = "theme_20",
+    accent  = Color3.fromRGB(228, 36, 140),
+    bg      = Color3.fromRGB(57, 9, 35),
+    text    = Color3.fromRGB(27, 219, 115),
+    outline = Color3.fromRGB(114, 18, 70),
+}
+getgenv().MeowThemes.theme_21 = {
+    name = "theme_21",
+    accent  = Color3.fromRGB(9, 89, 211),
+    bg      = Color3.fromRGB(2, 22, 52),
+    text    = Color3.fromRGB(246, 166, 44),
+    outline = Color3.fromRGB(4, 44, 105),
+}
+getgenv().MeowThemes.theme_22 = {
+    name = "theme_22",
+    accent  = Color3.fromRGB(46, 142, 26),
+    bg      = Color3.fromRGB(11, 35, 6),
+    text    = Color3.fromRGB(209, 113, 229),
+    outline = Color3.fromRGB(23, 71, 13),
+}
+getgenv().MeowThemes.theme_23 = {
+    name = "theme_23",
+    accent  = Color3.fromRGB(83, 195, 97),
+    bg      = Color3.fromRGB(20, 48, 24),
+    text    = Color3.fromRGB(172, 60, 158),
+    outline = Color3.fromRGB(41, 97, 48),
+}
+getgenv().MeowThemes.theme_24 = {
+    name = "theme_24",
+    accent  = Color3.fromRGB(120, 248, 168),
+    bg      = Color3.fromRGB(30, 62, 42),
+    text    = Color3.fromRGB(135, 7, 87),
+    outline = Color3.fromRGB(60, 124, 84),
+}
+getgenv().MeowThemes.theme_25 = {
+    name = "theme_25",
+    accent  = Color3.fromRGB(157, 45, 239),
+    bg      = Color3.fromRGB(39, 11, 59),
+    text    = Color3.fromRGB(98, 210, 16),
+    outline = Color3.fromRGB(78, 22, 119),
+}
+getgenv().MeowThemes.theme_26 = {
+    name = "theme_26",
+    accent  = Color3.fromRGB(194, 98, 54),
+    bg      = Color3.fromRGB(48, 24, 13),
+    text    = Color3.fromRGB(61, 157, 201),
+    outline = Color3.fromRGB(97, 49, 27),
+}
+getgenv().MeowThemes.theme_27 = {
+    name = "theme_27",
+    accent  = Color3.fromRGB(231, 151, 125),
+    bg      = Color3.fromRGB(57, 37, 31),
+    text    = Color3.fromRGB(24, 104, 130),
+    outline = Color3.fromRGB(115, 75, 62),
+}
+getgenv().MeowThemes.theme_28 = {
+    name = "theme_28",
+    accent  = Color3.fromRGB(12, 204, 196),
+    bg      = Color3.fromRGB(3, 51, 49),
+    text    = Color3.fromRGB(243, 51, 59),
+    outline = Color3.fromRGB(6, 102, 98),
+}
+getgenv().MeowThemes.theme_29 = {
+    name = "theme_29",
+    accent  = Color3.fromRGB(49, 1, 11),
+    bg      = Color3.fromRGB(12, 0, 2),
+    text    = Color3.fromRGB(206, 254, 244),
+    outline = Color3.fromRGB(24, 0, 5),
+}
+getgenv().MeowThemes.theme_30 = {
+    name = "theme_30",
+    accent  = Color3.fromRGB(86, 54, 82),
+    bg      = Color3.fromRGB(21, 13, 20),
+    text    = Color3.fromRGB(169, 201, 173),
+    outline = Color3.fromRGB(43, 27, 41),
+}
+getgenv().MeowThemes.theme_31 = {
+    name = "theme_31",
+    accent  = Color3.fromRGB(123, 107, 153),
+    bg      = Color3.fromRGB(30, 26, 38),
+    text    = Color3.fromRGB(132, 148, 102),
+    outline = Color3.fromRGB(61, 53, 76),
+}
+getgenv().MeowThemes.theme_32 = {
+    name = "theme_32",
+    accent  = Color3.fromRGB(160, 160, 224),
+    bg      = Color3.fromRGB(40, 40, 56),
+    text    = Color3.fromRGB(95, 95, 31),
+    outline = Color3.fromRGB(80, 80, 112),
+}
+getgenv().MeowThemes.theme_33 = {
+    name = "theme_33",
+    accent  = Color3.fromRGB(197, 213, 39),
+    bg      = Color3.fromRGB(49, 53, 9),
+    text    = Color3.fromRGB(58, 42, 216),
+    outline = Color3.fromRGB(98, 106, 19),
+}
+getgenv().MeowThemes.theme_34 = {
+    name = "theme_34",
+    accent  = Color3.fromRGB(234, 10, 110),
+    bg      = Color3.fromRGB(58, 2, 27),
+    text    = Color3.fromRGB(21, 245, 145),
+    outline = Color3.fromRGB(117, 5, 55),
+}
+getgenv().MeowThemes.theme_35 = {
+    name = "theme_35",
+    accent  = Color3.fromRGB(15, 63, 181),
+    bg      = Color3.fromRGB(3, 15, 45),
+    text    = Color3.fromRGB(240, 192, 74),
+    outline = Color3.fromRGB(7, 31, 90),
+}
+getgenv().MeowThemes.theme_36 = {
+    name = "theme_36",
+    accent  = Color3.fromRGB(52, 116, 252),
+    bg      = Color3.fromRGB(13, 29, 63),
+    text    = Color3.fromRGB(203, 139, 3),
+    outline = Color3.fromRGB(26, 58, 126),
+}
+getgenv().MeowThemes.theme_37 = {
+    name = "theme_37",
+    accent  = Color3.fromRGB(89, 169, 67),
+    bg      = Color3.fromRGB(22, 42, 16),
+    text    = Color3.fromRGB(166, 86, 188),
+    outline = Color3.fromRGB(44, 84, 33),
+}
+getgenv().MeowThemes.theme_38 = {
+    name = "theme_38",
+    accent  = Color3.fromRGB(126, 222, 138),
+    bg      = Color3.fromRGB(31, 55, 34),
+    text    = Color3.fromRGB(129, 33, 117),
+    outline = Color3.fromRGB(63, 111, 69),
+}
+getgenv().MeowThemes.theme_39 = {
+    name = "theme_39",
+    accent  = Color3.fromRGB(163, 19, 209),
+    bg      = Color3.fromRGB(40, 4, 52),
+    text    = Color3.fromRGB(92, 236, 46),
+    outline = Color3.fromRGB(81, 9, 104),
+}
+getgenv().MeowThemes.theme_40 = {
+    name = "theme_40",
+    accent  = Color3.fromRGB(200, 72, 24),
+    bg      = Color3.fromRGB(50, 18, 6),
+    text    = Color3.fromRGB(55, 183, 231),
+    outline = Color3.fromRGB(100, 36, 12),
+}
+getgenv().MeowThemes.theme_41 = {
+    name = "theme_41",
+    accent  = Color3.fromRGB(237, 125, 95),
+    bg      = Color3.fromRGB(59, 31, 23),
+    text    = Color3.fromRGB(18, 130, 160),
+    outline = Color3.fromRGB(118, 62, 47),
+}
+getgenv().MeowThemes.theme_42 = {
+    name = "theme_42",
+    accent  = Color3.fromRGB(18, 178, 166),
+    bg      = Color3.fromRGB(4, 44, 41),
+    text    = Color3.fromRGB(237, 77, 89),
+    outline = Color3.fromRGB(9, 89, 83),
+}
+getgenv().MeowThemes.theme_43 = {
+    name = "theme_43",
+    accent  = Color3.fromRGB(55, 231, 237),
+    bg      = Color3.fromRGB(13, 57, 59),
+    text    = Color3.fromRGB(200, 24, 18),
+    outline = Color3.fromRGB(27, 115, 118),
+}
+getgenv().MeowThemes.theme_44 = {
+    name = "theme_44",
+    accent  = Color3.fromRGB(92, 28, 52),
+    bg      = Color3.fromRGB(23, 7, 13),
+    text    = Color3.fromRGB(163, 227, 203),
+    outline = Color3.fromRGB(46, 14, 26),
+}
+getgenv().MeowThemes.theme_45 = {
+    name = "theme_45",
+    accent  = Color3.fromRGB(129, 81, 123),
+    bg      = Color3.fromRGB(32, 20, 30),
+    text    = Color3.fromRGB(126, 174, 132),
+    outline = Color3.fromRGB(64, 40, 61),
+}
+getgenv().MeowThemes.theme_46 = {
+    name = "theme_46",
+    accent  = Color3.fromRGB(166, 134, 194),
+    bg      = Color3.fromRGB(41, 33, 48),
+    text    = Color3.fromRGB(89, 121, 61),
+    outline = Color3.fromRGB(83, 67, 97),
+}
+getgenv().MeowThemes.theme_47 = {
+    name = "theme_47",
+    accent  = Color3.fromRGB(203, 187, 9),
+    bg      = Color3.fromRGB(50, 46, 2),
+    text    = Color3.fromRGB(52, 68, 246),
+    outline = Color3.fromRGB(101, 93, 4),
+}
+getgenv().MeowThemes.theme_48 = {
+    name = "theme_48",
+    accent  = Color3.fromRGB(240, 240, 80),
+    bg      = Color3.fromRGB(60, 60, 20),
+    text    = Color3.fromRGB(15, 15, 175),
+    outline = Color3.fromRGB(120, 120, 40),
+}
+getgenv().MeowThemes.theme_49 = {
+    name = "theme_49",
+    accent  = Color3.fromRGB(21, 37, 151),
+    bg      = Color3.fromRGB(5, 9, 37),
+    text    = Color3.fromRGB(234, 218, 104),
+    outline = Color3.fromRGB(10, 18, 75),
+}
+getgenv().MeowThemes.theme_50 = {
+    name = "theme_50",
+    accent  = Color3.fromRGB(58, 90, 222),
+    bg      = Color3.fromRGB(14, 22, 55),
+    text    = Color3.fromRGB(197, 165, 33),
+    outline = Color3.fromRGB(29, 45, 111),
+}
+getgenv().MeowThemes.theme_51 = {
+    name = "theme_51",
+    accent  = Color3.fromRGB(95, 143, 37),
+    bg      = Color3.fromRGB(23, 35, 9),
+    text    = Color3.fromRGB(160, 112, 218),
+    outline = Color3.fromRGB(47, 71, 18),
+}
+getgenv().MeowThemes.theme_52 = {
+    name = "theme_52",
+    accent  = Color3.fromRGB(132, 196, 108),
+    bg      = Color3.fromRGB(33, 49, 27),
+    text    = Color3.fromRGB(123, 59, 147),
+    outline = Color3.fromRGB(66, 98, 54),
+}
+getgenv().MeowThemes.theme_53 = {
+    name = "theme_53",
+    accent  = Color3.fromRGB(169, 249, 179),
+    bg      = Color3.fromRGB(42, 62, 44),
+    text    = Color3.fromRGB(86, 6, 76),
+    outline = Color3.fromRGB(84, 124, 89),
+}
+getgenv().MeowThemes.theme_54 = {
+    name = "theme_54",
+    accent  = Color3.fromRGB(206, 46, 250),
+    bg      = Color3.fromRGB(51, 11, 62),
+    text    = Color3.fromRGB(49, 209, 5),
+    outline = Color3.fromRGB(103, 23, 125),
+}
+getgenv().MeowThemes.theme_55 = {
+    name = "theme_55",
+    accent  = Color3.fromRGB(243, 99, 65),
+    bg      = Color3.fromRGB(60, 24, 16),
+    text    = Color3.fromRGB(12, 156, 190),
+    outline = Color3.fromRGB(121, 49, 32),
+}
+getgenv().MeowThemes.theme_56 = {
+    name = "theme_56",
+    accent  = Color3.fromRGB(24, 152, 136),
+    bg      = Color3.fromRGB(6, 38, 34),
+    text    = Color3.fromRGB(231, 103, 119),
+    outline = Color3.fromRGB(12, 76, 68),
+}
+getgenv().MeowThemes.theme_57 = {
+    name = "theme_57",
+    accent  = Color3.fromRGB(61, 205, 207),
+    bg      = Color3.fromRGB(15, 51, 51),
+    text    = Color3.fromRGB(194, 50, 48),
+    outline = Color3.fromRGB(30, 102, 103),
+}
+getgenv().MeowThemes.theme_58 = {
+    name = "theme_58",
+    accent  = Color3.fromRGB(98, 2, 22),
+    bg      = Color3.fromRGB(24, 0, 5),
+    text    = Color3.fromRGB(157, 253, 233),
+    outline = Color3.fromRGB(49, 1, 11),
+}
+getgenv().MeowThemes.theme_59 = {
+    name = "theme_59",
+    accent  = Color3.fromRGB(135, 55, 93),
+    bg      = Color3.fromRGB(33, 13, 23),
+    text    = Color3.fromRGB(120, 200, 162),
+    outline = Color3.fromRGB(67, 27, 46),
+}
+getgenv().MeowThemes.theme_60 = {
+    name = "theme_60",
+    accent  = Color3.fromRGB(172, 108, 164),
+    bg      = Color3.fromRGB(43, 27, 41),
+    text    = Color3.fromRGB(83, 147, 91),
+    outline = Color3.fromRGB(86, 54, 82),
+}
+getgenv().MeowThemes.theme_61 = {
+    name = "theme_61",
+    accent  = Color3.fromRGB(209, 161, 235),
+    bg      = Color3.fromRGB(52, 40, 58),
+    text    = Color3.fromRGB(46, 94, 20),
+    outline = Color3.fromRGB(104, 80, 117),
+}
+getgenv().MeowThemes.theme_62 = {
+    name = "theme_62",
+    accent  = Color3.fromRGB(246, 214, 50),
+    bg      = Color3.fromRGB(61, 53, 12),
+    text    = Color3.fromRGB(9, 41, 205),
+    outline = Color3.fromRGB(123, 107, 25),
+}
+getgenv().MeowThemes.theme_63 = {
+    name = "theme_63",
+    accent  = Color3.fromRGB(27, 11, 121),
+    bg      = Color3.fromRGB(6, 2, 30),
+    text    = Color3.fromRGB(228, 244, 134),
+    outline = Color3.fromRGB(13, 5, 60),
+}
+getgenv().MeowThemes.theme_64 = {
+    name = "theme_64",
+    accent  = Color3.fromRGB(64, 64, 192),
+    bg      = Color3.fromRGB(16, 16, 48),
+    text    = Color3.fromRGB(191, 191, 63),
+    outline = Color3.fromRGB(32, 32, 96),
+}
+getgenv().MeowThemes.theme_65 = {
+    name = "theme_65",
+    accent  = Color3.fromRGB(101, 117, 7),
+    bg      = Color3.fromRGB(25, 29, 1),
+    text    = Color3.fromRGB(154, 138, 248),
+    outline = Color3.fromRGB(50, 58, 3),
+}
+getgenv().MeowThemes.theme_66 = {
+    name = "theme_66",
+    accent  = Color3.fromRGB(138, 170, 78),
+    bg      = Color3.fromRGB(34, 42, 19),
+    text    = Color3.fromRGB(117, 85, 177),
+    outline = Color3.fromRGB(69, 85, 39),
+}
+getgenv().MeowThemes.theme_67 = {
+    name = "theme_67",
+    accent  = Color3.fromRGB(175, 223, 149),
+    bg      = Color3.fromRGB(43, 55, 37),
+    text    = Color3.fromRGB(80, 32, 106),
+    outline = Color3.fromRGB(87, 111, 74),
+}
+getgenv().MeowThemes.theme_68 = {
+    name = "theme_68",
+    accent  = Color3.fromRGB(212, 20, 220),
+    bg      = Color3.fromRGB(53, 5, 55),
+    text    = Color3.fromRGB(43, 235, 35),
+    outline = Color3.fromRGB(106, 10, 110),
+}
+getgenv().MeowThemes.theme_69 = {
+    name = "theme_69",
+    accent  = Color3.fromRGB(249, 73, 35),
+    bg      = Color3.fromRGB(62, 18, 8),
+    text    = Color3.fromRGB(6, 182, 220),
+    outline = Color3.fromRGB(124, 36, 17),
+}
+getgenv().MeowThemes.theme_70 = {
+    name = "theme_70",
+    accent  = Color3.fromRGB(30, 126, 106),
+    bg      = Color3.fromRGB(7, 31, 26),
+    text    = Color3.fromRGB(225, 129, 149),
+    outline = Color3.fromRGB(15, 63, 53),
+}
+getgenv().MeowThemes.theme_71 = {
+    name = "theme_71",
+    accent  = Color3.fromRGB(67, 179, 177),
+    bg      = Color3.fromRGB(16, 44, 44),
+    text    = Color3.fromRGB(188, 76, 78),
+    outline = Color3.fromRGB(33, 89, 88),
+}
+getgenv().MeowThemes.theme_72 = {
+    name = "theme_72",
+    accent  = Color3.fromRGB(104, 232, 248),
+    bg      = Color3.fromRGB(26, 58, 62),
+    text    = Color3.fromRGB(151, 23, 7),
+    outline = Color3.fromRGB(52, 116, 124),
+}
+getgenv().MeowThemes.theme_73 = {
+    name = "theme_73",
+    accent  = Color3.fromRGB(141, 29, 63),
+    bg      = Color3.fromRGB(35, 7, 15),
+    text    = Color3.fromRGB(114, 226, 192),
+    outline = Color3.fromRGB(70, 14, 31),
+}
+getgenv().MeowThemes.theme_74 = {
+    name = "theme_74",
+    accent  = Color3.fromRGB(178, 82, 134),
+    bg      = Color3.fromRGB(44, 20, 33),
+    text    = Color3.fromRGB(77, 173, 121),
+    outline = Color3.fromRGB(89, 41, 67),
+}
+getgenv().MeowThemes.theme_75 = {
+    name = "theme_75",
+    accent  = Color3.fromRGB(215, 135, 205),
+    bg      = Color3.fromRGB(53, 33, 51),
+    text    = Color3.fromRGB(40, 120, 50),
+    outline = Color3.fromRGB(107, 67, 102),
+}
+getgenv().MeowThemes.theme_76 = {
+    name = "theme_76",
+    accent  = Color3.fromRGB(252, 188, 20),
+    bg      = Color3.fromRGB(63, 47, 5),
+    text    = Color3.fromRGB(3, 67, 235),
+    outline = Color3.fromRGB(126, 94, 10),
+}
+getgenv().MeowThemes.theme_77 = {
+    name = "theme_77",
+    accent  = Color3.fromRGB(33, 241, 91),
+    bg      = Color3.fromRGB(8, 60, 22),
+    text    = Color3.fromRGB(222, 14, 164),
+    outline = Color3.fromRGB(16, 120, 45),
+}
+getgenv().MeowThemes.theme_78 = {
+    name = "theme_78",
+    accent  = Color3.fromRGB(70, 38, 162),
+    bg      = Color3.fromRGB(17, 9, 40),
+    text    = Color3.fromRGB(185, 217, 93),
+    outline = Color3.fromRGB(35, 19, 81),
+}
+getgenv().MeowThemes.theme_79 = {
+    name = "theme_79",
+    accent  = Color3.fromRGB(107, 91, 233),
+    bg      = Color3.fromRGB(26, 22, 58),
+    text    = Color3.fromRGB(148, 164, 22),
+    outline = Color3.fromRGB(53, 45, 116),
+}
+getgenv().MeowThemes.theme_80 = {
+    name = "theme_80",
+    accent  = Color3.fromRGB(144, 144, 48),
+    bg      = Color3.fromRGB(36, 36, 12),
+    text    = Color3.fromRGB(111, 111, 207),
+    outline = Color3.fromRGB(72, 72, 24),
+}
+
+-- =========================================================================
+-- WAYPOINT PRESETS (spawn points per map)
+-- =========================================================================
+getgenv().MeowWaypoints = {}
+getgenv().MeowWaypoints.waypoint_1 = {
+    name = "waypoint_1",
+    position = Vector3.new(-387, 11, -483),
+    yaw = math.rad(7),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_2 = {
+    name = "waypoint_2",
+    position = Vector3.new(-374, 12, -466),
+    yaw = math.rad(14),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_3 = {
+    name = "waypoint_3",
+    position = Vector3.new(-361, 13, -449),
+    yaw = math.rad(21),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_4 = {
+    name = "waypoint_4",
+    position = Vector3.new(-348, 14, -432),
+    yaw = math.rad(28),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_5 = {
+    name = "waypoint_5",
+    position = Vector3.new(-335, 15, -415),
+    yaw = math.rad(35),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_6 = {
+    name = "waypoint_6",
+    position = Vector3.new(-322, 16, -398),
+    yaw = math.rad(42),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_7 = {
+    name = "waypoint_7",
+    position = Vector3.new(-309, 17, -381),
+    yaw = math.rad(49),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_8 = {
+    name = "waypoint_8",
+    position = Vector3.new(-296, 18, -364),
+    yaw = math.rad(56),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_9 = {
+    name = "waypoint_9",
+    position = Vector3.new(-283, 19, -347),
+    yaw = math.rad(63),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_10 = {
+    name = "waypoint_10",
+    position = Vector3.new(-270, 20, -330),
+    yaw = math.rad(70),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_11 = {
+    name = "waypoint_11",
+    position = Vector3.new(-257, 21, -313),
+    yaw = math.rad(77),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_12 = {
+    name = "waypoint_12",
+    position = Vector3.new(-244, 22, -296),
+    yaw = math.rad(84),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_13 = {
+    name = "waypoint_13",
+    position = Vector3.new(-231, 23, -279),
+    yaw = math.rad(91),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_14 = {
+    name = "waypoint_14",
+    position = Vector3.new(-218, 24, -262),
+    yaw = math.rad(98),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_15 = {
+    name = "waypoint_15",
+    position = Vector3.new(-205, 25, -245),
+    yaw = math.rad(105),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_16 = {
+    name = "waypoint_16",
+    position = Vector3.new(-192, 26, -228),
+    yaw = math.rad(112),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_17 = {
+    name = "waypoint_17",
+    position = Vector3.new(-179, 27, -211),
+    yaw = math.rad(119),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_18 = {
+    name = "waypoint_18",
+    position = Vector3.new(-166, 28, -194),
+    yaw = math.rad(126),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_19 = {
+    name = "waypoint_19",
+    position = Vector3.new(-153, 29, -177),
+    yaw = math.rad(133),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_20 = {
+    name = "waypoint_20",
+    position = Vector3.new(-140, 30, -160),
+    yaw = math.rad(140),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_21 = {
+    name = "waypoint_21",
+    position = Vector3.new(-127, 31, -143),
+    yaw = math.rad(147),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_22 = {
+    name = "waypoint_22",
+    position = Vector3.new(-114, 32, -126),
+    yaw = math.rad(154),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_23 = {
+    name = "waypoint_23",
+    position = Vector3.new(-101, 33, -109),
+    yaw = math.rad(161),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_24 = {
+    name = "waypoint_24",
+    position = Vector3.new(-88, 34, -92),
+    yaw = math.rad(168),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_25 = {
+    name = "waypoint_25",
+    position = Vector3.new(-75, 35, -75),
+    yaw = math.rad(175),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_26 = {
+    name = "waypoint_26",
+    position = Vector3.new(-62, 36, -58),
+    yaw = math.rad(182),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_27 = {
+    name = "waypoint_27",
+    position = Vector3.new(-49, 37, -41),
+    yaw = math.rad(189),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_28 = {
+    name = "waypoint_28",
+    position = Vector3.new(-36, 38, -24),
+    yaw = math.rad(196),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_29 = {
+    name = "waypoint_29",
+    position = Vector3.new(-23, 39, -7),
+    yaw = math.rad(203),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_30 = {
+    name = "waypoint_30",
+    position = Vector3.new(-10, 40, 10),
+    yaw = math.rad(210),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_31 = {
+    name = "waypoint_31",
+    position = Vector3.new(3, 41, 27),
+    yaw = math.rad(217),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_32 = {
+    name = "waypoint_32",
+    position = Vector3.new(16, 42, 44),
+    yaw = math.rad(224),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_33 = {
+    name = "waypoint_33",
+    position = Vector3.new(29, 43, 61),
+    yaw = math.rad(231),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_34 = {
+    name = "waypoint_34",
+    position = Vector3.new(42, 44, 78),
+    yaw = math.rad(238),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_35 = {
+    name = "waypoint_35",
+    position = Vector3.new(55, 45, 95),
+    yaw = math.rad(245),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_36 = {
+    name = "waypoint_36",
+    position = Vector3.new(68, 46, 112),
+    yaw = math.rad(252),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_37 = {
+    name = "waypoint_37",
+    position = Vector3.new(81, 47, 129),
+    yaw = math.rad(259),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_38 = {
+    name = "waypoint_38",
+    position = Vector3.new(94, 48, 146),
+    yaw = math.rad(266),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_39 = {
+    name = "waypoint_39",
+    position = Vector3.new(107, 49, 163),
+    yaw = math.rad(273),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_40 = {
+    name = "waypoint_40",
+    position = Vector3.new(120, 50, 180),
+    yaw = math.rad(280),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_41 = {
+    name = "waypoint_41",
+    position = Vector3.new(133, 51, 197),
+    yaw = math.rad(287),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_42 = {
+    name = "waypoint_42",
+    position = Vector3.new(146, 52, 214),
+    yaw = math.rad(294),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_43 = {
+    name = "waypoint_43",
+    position = Vector3.new(159, 53, 231),
+    yaw = math.rad(301),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_44 = {
+    name = "waypoint_44",
+    position = Vector3.new(172, 54, 248),
+    yaw = math.rad(308),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_45 = {
+    name = "waypoint_45",
+    position = Vector3.new(185, 55, 265),
+    yaw = math.rad(315),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_46 = {
+    name = "waypoint_46",
+    position = Vector3.new(198, 56, 282),
+    yaw = math.rad(322),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_47 = {
+    name = "waypoint_47",
+    position = Vector3.new(211, 57, 299),
+    yaw = math.rad(329),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_48 = {
+    name = "waypoint_48",
+    position = Vector3.new(224, 58, 316),
+    yaw = math.rad(336),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_49 = {
+    name = "waypoint_49",
+    position = Vector3.new(237, 59, 333),
+    yaw = math.rad(343),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_50 = {
+    name = "waypoint_50",
+    position = Vector3.new(250, 10, 350),
+    yaw = math.rad(350),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_51 = {
+    name = "waypoint_51",
+    position = Vector3.new(263, 11, 367),
+    yaw = math.rad(357),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_52 = {
+    name = "waypoint_52",
+    position = Vector3.new(276, 12, 384),
+    yaw = math.rad(4),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_53 = {
+    name = "waypoint_53",
+    position = Vector3.new(289, 13, 401),
+    yaw = math.rad(11),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_54 = {
+    name = "waypoint_54",
+    position = Vector3.new(302, 14, 418),
+    yaw = math.rad(18),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_55 = {
+    name = "waypoint_55",
+    position = Vector3.new(315, 15, 435),
+    yaw = math.rad(25),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_56 = {
+    name = "waypoint_56",
+    position = Vector3.new(328, 16, 452),
+    yaw = math.rad(32),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_57 = {
+    name = "waypoint_57",
+    position = Vector3.new(341, 17, 469),
+    yaw = math.rad(39),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_58 = {
+    name = "waypoint_58",
+    position = Vector3.new(354, 18, 486),
+    yaw = math.rad(46),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_59 = {
+    name = "waypoint_59",
+    position = Vector3.new(367, 19, 503),
+    yaw = math.rad(53),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_60 = {
+    name = "waypoint_60",
+    position = Vector3.new(380, 20, 520),
+    yaw = math.rad(60),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_61 = {
+    name = "waypoint_61",
+    position = Vector3.new(393, 21, 537),
+    yaw = math.rad(67),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_62 = {
+    name = "waypoint_62",
+    position = Vector3.new(406, 22, 554),
+    yaw = math.rad(74),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_63 = {
+    name = "waypoint_63",
+    position = Vector3.new(419, 23, 571),
+    yaw = math.rad(81),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_64 = {
+    name = "waypoint_64",
+    position = Vector3.new(432, 24, 588),
+    yaw = math.rad(88),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_65 = {
+    name = "waypoint_65",
+    position = Vector3.new(445, 25, 605),
+    yaw = math.rad(95),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_66 = {
+    name = "waypoint_66",
+    position = Vector3.new(458, 26, 622),
+    yaw = math.rad(102),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_67 = {
+    name = "waypoint_67",
+    position = Vector3.new(471, 27, 639),
+    yaw = math.rad(109),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_68 = {
+    name = "waypoint_68",
+    position = Vector3.new(484, 28, 656),
+    yaw = math.rad(116),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_69 = {
+    name = "waypoint_69",
+    position = Vector3.new(497, 29, 673),
+    yaw = math.rad(123),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_70 = {
+    name = "waypoint_70",
+    position = Vector3.new(510, 30, 690),
+    yaw = math.rad(130),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_71 = {
+    name = "waypoint_71",
+    position = Vector3.new(523, 31, 707),
+    yaw = math.rad(137),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_72 = {
+    name = "waypoint_72",
+    position = Vector3.new(536, 32, 724),
+    yaw = math.rad(144),
+    tag = "map_1",
+}
+getgenv().MeowWaypoints.waypoint_73 = {
+    name = "waypoint_73",
+    position = Vector3.new(549, 33, 741),
+    yaw = math.rad(151),
+    tag = "map_2",
+}
+getgenv().MeowWaypoints.waypoint_74 = {
+    name = "waypoint_74",
+    position = Vector3.new(562, 34, 758),
+    yaw = math.rad(158),
+    tag = "map_3",
+}
+getgenv().MeowWaypoints.waypoint_75 = {
+    name = "waypoint_75",
+    position = Vector3.new(575, 35, 775),
+    yaw = math.rad(165),
+    tag = "map_4",
+}
+getgenv().MeowWaypoints.waypoint_76 = {
+    name = "waypoint_76",
+    position = Vector3.new(588, 36, 792),
+    yaw = math.rad(172),
+    tag = "map_5",
+}
+getgenv().MeowWaypoints.waypoint_77 = {
+    name = "waypoint_77",
+    position = Vector3.new(601, 37, 809),
+    yaw = math.rad(179),
+    tag = "map_6",
+}
+getgenv().MeowWaypoints.waypoint_78 = {
+    name = "waypoint_78",
+    position = Vector3.new(614, 38, 826),
+    yaw = math.rad(186),
+    tag = "map_7",
+}
+getgenv().MeowWaypoints.waypoint_79 = {
+    name = "waypoint_79",
+    position = Vector3.new(627, 39, 843),
+    yaw = math.rad(193),
+    tag = "map_8",
+}
+getgenv().MeowWaypoints.waypoint_80 = {
+    name = "waypoint_80",
+    position = Vector3.new(640, 40, 860),
+    yaw = math.rad(200),
+    tag = "map_1",
+}
+
+-- =========================================================================
+-- RAGE PROFILES
+-- =========================================================================
+getgenv().MeowRageProfiles = {}
+getgenv().MeowRageProfiles.profile_1 = {
+    name = "profile_1",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 2,
+    tp_height = -9,
+    orbit_speed = 125,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (1 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_2 = {
+    name = "profile_2",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 3,
+    tp_height = -8,
+    orbit_speed = 150,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (2 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_3 = {
+    name = "profile_3",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 4,
+    tp_height = -7,
+    orbit_speed = 175,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (3 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_4 = {
+    name = "profile_4",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 5,
+    tp_height = -6,
+    orbit_speed = 200,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (4 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_5 = {
+    name = "profile_5",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 6,
+    tp_height = -5,
+    orbit_speed = 225,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (5 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_6 = {
+    name = "profile_6",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 7,
+    tp_height = -4,
+    orbit_speed = 250,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (6 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_7 = {
+    name = "profile_7",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 8,
+    tp_height = -3,
+    orbit_speed = 275,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (7 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_8 = {
+    name = "profile_8",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 9,
+    tp_height = -2,
+    orbit_speed = 300,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (8 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_9 = {
+    name = "profile_9",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 10,
+    tp_height = -1,
+    orbit_speed = 325,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (9 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_10 = {
+    name = "profile_10",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 11,
+    tp_height = 0,
+    orbit_speed = 350,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (0 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_11 = {
+    name = "profile_11",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 12,
+    tp_height = 1,
+    orbit_speed = 375,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (1 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_12 = {
+    name = "profile_12",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 13,
+    tp_height = 2,
+    orbit_speed = 400,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (2 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_13 = {
+    name = "profile_13",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 14,
+    tp_height = 3,
+    orbit_speed = 425,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (3 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_14 = {
+    name = "profile_14",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 15,
+    tp_height = 4,
+    orbit_speed = 450,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (4 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_15 = {
+    name = "profile_15",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 16,
+    tp_height = 5,
+    orbit_speed = 475,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (5 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_16 = {
+    name = "profile_16",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 17,
+    tp_height = 6,
+    orbit_speed = 500,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (6 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_17 = {
+    name = "profile_17",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 18,
+    tp_height = 7,
+    orbit_speed = 525,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (7 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_18 = {
+    name = "profile_18",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 19,
+    tp_height = 8,
+    orbit_speed = 550,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (8 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_19 = {
+    name = "profile_19",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 20,
+    tp_height = 9,
+    orbit_speed = 575,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (9 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_20 = {
+    name = "profile_20",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 21,
+    tp_height = -10,
+    orbit_speed = 600,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (0 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_21 = {
+    name = "profile_21",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 22,
+    tp_height = -9,
+    orbit_speed = 625,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (1 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_22 = {
+    name = "profile_22",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 23,
+    tp_height = -8,
+    orbit_speed = 650,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (2 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_23 = {
+    name = "profile_23",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 24,
+    tp_height = -7,
+    orbit_speed = 675,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (3 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_24 = {
+    name = "profile_24",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 25,
+    tp_height = -6,
+    orbit_speed = 700,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (4 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_25 = {
+    name = "profile_25",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 26,
+    tp_height = -5,
+    orbit_speed = 725,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (5 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_26 = {
+    name = "profile_26",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 27,
+    tp_height = -4,
+    orbit_speed = 750,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (6 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_27 = {
+    name = "profile_27",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 28,
+    tp_height = -3,
+    orbit_speed = 775,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (7 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_28 = {
+    name = "profile_28",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 29,
+    tp_height = -2,
+    orbit_speed = 800,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (8 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_29 = {
+    name = "profile_29",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 30,
+    tp_height = -1,
+    orbit_speed = 825,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (9 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_30 = {
+    name = "profile_30",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 1,
+    tp_height = 0,
+    orbit_speed = 850,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (0 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_31 = {
+    name = "profile_31",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 2,
+    tp_height = 1,
+    orbit_speed = 875,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (1 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_32 = {
+    name = "profile_32",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 3,
+    tp_height = 2,
+    orbit_speed = 900,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (2 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_33 = {
+    name = "profile_33",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 4,
+    tp_height = 3,
+    orbit_speed = 925,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (3 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_34 = {
+    name = "profile_34",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 5,
+    tp_height = 4,
+    orbit_speed = 950,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (4 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_35 = {
+    name = "profile_35",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 6,
+    tp_height = 5,
+    orbit_speed = 975,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (5 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_36 = {
+    name = "profile_36",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 7,
+    tp_height = 6,
+    orbit_speed = 1000,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (6 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_37 = {
+    name = "profile_37",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 8,
+    tp_height = 7,
+    orbit_speed = 1025,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (7 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_38 = {
+    name = "profile_38",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 9,
+    tp_height = 8,
+    orbit_speed = 1050,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (8 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_39 = {
+    name = "profile_39",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 10,
+    tp_height = 9,
+    orbit_speed = 1075,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (9 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_40 = {
+    name = "profile_40",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 11,
+    tp_height = -10,
+    orbit_speed = 1100,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (0 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_41 = {
+    name = "profile_41",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 12,
+    tp_height = -9,
+    orbit_speed = 1125,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (1 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_42 = {
+    name = "profile_42",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 13,
+    tp_height = -8,
+    orbit_speed = 1150,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (2 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_43 = {
+    name = "profile_43",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 14,
+    tp_height = -7,
+    orbit_speed = 1175,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (3 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_44 = {
+    name = "profile_44",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 15,
+    tp_height = -6,
+    orbit_speed = 1200,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (4 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_45 = {
+    name = "profile_45",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 16,
+    tp_height = -5,
+    orbit_speed = 1225,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (5 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_46 = {
+    name = "profile_46",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 17,
+    tp_height = -4,
+    orbit_speed = 1250,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (6 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_47 = {
+    name = "profile_47",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 18,
+    tp_height = -3,
+    orbit_speed = 1275,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (7 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_48 = {
+    name = "profile_48",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 19,
+    tp_height = -2,
+    orbit_speed = 1300,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (8 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_49 = {
+    name = "profile_49",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 20,
+    tp_height = -1,
+    orbit_speed = 1325,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (9 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_50 = {
+    name = "profile_50",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 21,
+    tp_height = 0,
+    orbit_speed = 1350,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (0 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_51 = {
+    name = "profile_51",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 22,
+    tp_height = 1,
+    orbit_speed = 1375,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (1 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_52 = {
+    name = "profile_52",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 23,
+    tp_height = 2,
+    orbit_speed = 1400,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (2 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_53 = {
+    name = "profile_53",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 24,
+    tp_height = 3,
+    orbit_speed = 1425,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (3 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_54 = {
+    name = "profile_54",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 25,
+    tp_height = 4,
+    orbit_speed = 1450,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (4 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_55 = {
+    name = "profile_55",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 26,
+    tp_height = 5,
+    orbit_speed = 1475,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (5 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_56 = {
+    name = "profile_56",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 27,
+    tp_height = 6,
+    orbit_speed = 1500,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (6 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_57 = {
+    name = "profile_57",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[2],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 28,
+    tp_height = 7,
+    orbit_speed = 1525,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (7 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_58 = {
+    name = "profile_58",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[3],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 29,
+    tp_height = 8,
+    orbit_speed = 1550,
+    shoot_attempts = 2,
+    prediction_mult = 1 + (8 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_59 = {
+    name = "profile_59",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[4],
+    strategy = ({"TP","Orbit"})[2],
+    tp_radius = 30,
+    tp_height = 9,
+    orbit_speed = 1575,
+    shoot_attempts = 3,
+    prediction_mult = 1 + (9 * 0.1),
+}
+getgenv().MeowRageProfiles.profile_60 = {
+    name = "profile_60",
+    hitbox = ({"Head","UpperTorso","HumanoidRootPart","LowerTorso"})[1],
+    strategy = ({"TP","Orbit"})[1],
+    tp_radius = 1,
+    tp_height = -10,
+    orbit_speed = 1600,
+    shoot_attempts = 1,
+    prediction_mult = 1 + (0 * 0.1),
+}
+
+-- =========================================================================
+-- SHAPE LOOKUP — register every shape as callable through one entry point
+-- =========================================================================
+getgenv().meow_shape_call = function(name, t, r)
+    local fn = getgenv().MeowShapes[name]
+    if fn then return fn(t, r) end
+    return Vector3.new(math.cos(t) * r, 0, math.sin(t) * r)
+end
+
+getgenv().meow_weapon_apply = function(preset_name)
+    local p = getgenv().MeowWeaponPresets[preset_name]
+    if not p then return end
+    pcall(function()
+        local lib = require(game:GetService("ReplicatedStorage").Modules.ItemLibrary)
+        if lib and lib.Items then
+            for _, item in pairs(lib.Items) do
+                if typeof(item) == "table" then
+                    for k, v in pairs(p) do
+                        if k ~= "name" and k ~= "_tier" and item[k] ~= nil then item[k] = v end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+getgenv().meow_theme_apply = function(theme_name)
+    local t = getgenv().MeowThemes[theme_name]
+    if not t then return end
+    if getgenv().meow_lib and getgenv().meow_lib.SetAccentColor then
+        pcall(function() getgenv().meow_lib:SetAccentColor(t.accent) end)
+    end
+end
+
+getgenv().meow_waypoint_tp = function(waypoint_name)
+    local w = getgenv().MeowWaypoints[waypoint_name]
+    if not w then return end
+    if getgenv().safe_teleport then getgenv().safe_teleport(w.position) end
+end
+
+getgenv().meow_rage_profile_apply = function(profile_name)
+    local p = getgenv().MeowRageProfiles[profile_name]
+    if not p then return end
+    local cfg = getgenv().config
+    cfg.rage_hitbox       = p.hitbox
+    cfg.rage_strategy     = p.strategy
+    cfg.rage_tp_radius    = p.tp_radius
+    cfg.rage_tp_height    = p.tp_height
+    cfg.rage_orbit_speed  = p.orbit_speed
+    cfg.shoot_attempts    = p.shoot_attempts
+    cfg.prediction_mult   = p.prediction_mult
+end
+
+notify('meowlua', 'bulk pack loaded: 300 shapes · 120 weapon presets · 80 themes · 80 waypoints · 60 rage profiles')
+-- =========================================================================
+-- BULK PACK 2 — expanded evasion shapes, aim profiles, chat banks,
+-- target priority lists, extended keybind presets
+-- =========================================================================
+
+getgenv().MeowEvShapes = {}
+getgenv().MeowEvShapes.ev_1 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_2 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_3 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_4 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_5 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_6 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_7 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_8 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_9 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_10 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_11 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_12 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_13 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_14 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_15 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_16 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_17 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_18 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_19 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_20 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_21 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_22 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_23 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_24 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_25 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_26 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_27 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_28 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_29 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_30 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_31 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_32 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_33 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_34 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_35 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_36 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_37 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_38 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_39 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_40 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_41 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_42 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_43 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_44 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_45 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_46 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_47 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_48 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_49 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_50 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_51 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_52 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_53 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_54 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_55 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_56 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_57 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_58 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_59 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_60 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_61 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_62 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_63 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_64 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_65 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_66 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_67 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_68 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_69 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_70 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_71 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_72 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_73 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_74 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_75 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_76 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_77 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_78 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_79 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_80 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_81 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_82 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_83 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_84 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_85 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_86 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_87 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_88 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_89 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_90 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_91 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_92 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_93 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_94 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_95 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_96 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_97 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_98 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_99 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_100 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_101 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_102 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_103 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_104 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_105 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_106 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_107 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_108 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_109 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_110 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_111 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_112 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_113 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_114 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_115 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_116 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_117 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_118 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_119 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_120 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_121 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_122 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_123 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_124 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_125 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_126 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_127 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_128 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_129 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_130 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_131 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_132 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_133 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_134 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_135 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_136 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_137 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_138 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_139 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_140 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_141 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_142 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_143 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_144 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_145 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_146 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_147 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_148 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_149 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_150 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_151 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_152 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_153 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_154 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_155 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_156 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_157 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_158 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_159 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_160 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_161 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_162 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_163 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_164 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_165 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_166 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_167 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_168 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_169 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_170 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_171 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_172 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_173 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_174 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_175 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_176 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_177 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_178 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_179 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_180 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_181 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_182 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_183 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_184 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_185 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_186 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_187 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_188 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_189 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_190 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_191 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_192 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_193 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_194 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_195 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_196 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_197 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_198 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_199 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_200 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_201 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_202 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_203 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_204 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_205 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_206 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_207 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_208 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_209 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_210 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_211 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_212 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_213 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_214 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_215 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_216 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_217 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_218 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_219 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_220 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_221 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_222 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_223 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_224 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_225 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_226 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_227 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_228 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_229 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_230 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_231 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_232 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_233 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_234 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_235 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_236 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_237 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_238 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_239 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_240 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_241 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_242 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_243 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_244 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_245 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_246 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_247 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_248 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_249 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_250 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_251 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_252 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_253 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_254 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_255 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_256 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_257 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_258 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_259 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_260 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_261 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_262 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_263 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_264 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_265 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_266 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_267 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_268 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_269 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_270 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_271 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_272 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_273 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_274 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_275 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_276 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_277 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_278 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_279 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_280 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_281 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_282 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_283 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_284 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_285 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_286 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_287 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_288 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 3
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_289 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 4
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_290 = function(t, r)
+    local a = t * math.pi * 2 * 5
+    local b = t * math.pi * 5
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_291 = function(t, r)
+    local a = t * math.pi * 2 * 6
+    local b = t * math.pi * 6
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_292 = function(t, r)
+    local a = t * math.pi * 2 * 7
+    local b = t * math.pi * 7
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_293 = function(t, r)
+    local a = t * math.pi * 2 * 8
+    local b = t * math.pi * 8
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_294 = function(t, r)
+    local a = t * math.pi * 2 * 9
+    local b = t * math.pi * 9
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_295 = function(t, r)
+    local a = t * math.pi * 2 * 10
+    local b = t * math.pi * 10
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_296 = function(t, r)
+    local a = t * math.pi * 2 * 11
+    local b = t * math.pi * 11
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowEvShapes.ev_297 = function(t, r)
+    local a = t * math.pi * 2 * 1
+    local b = t * math.pi * 12
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 2 * 0.25)
+end
+getgenv().MeowEvShapes.ev_298 = function(t, r)
+    local a = t * math.pi * 2 * 2
+    local b = t * math.pi * 13
+    return Vector3.new(math.sin(a) * r * 2 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 3 * 0.25)
+end
+getgenv().MeowEvShapes.ev_299 = function(t, r)
+    local a = t * math.pi * 2 * 3
+    local b = t * math.pi * 1
+    return Vector3.new(math.sin(a) * r * 3 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 4 * 0.25)
+end
+getgenv().MeowEvShapes.ev_300 = function(t, r)
+    local a = t * math.pi * 2 * 4
+    local b = t * math.pi * 2
+    return Vector3.new(math.sin(a) * r * 1 * 0.3, math.cos(b) * r * 0.5, math.cos(a) * r * 1 * 0.25)
+end
+getgenv().MeowAimProfiles = {}
+getgenv().MeowAimProfiles.aim_1 = {
+    name = "aim_1",
+    fov = 23,
+    smooth = 2,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_2 = {
+    name = "aim_2",
+    fov = 26,
+    smooth = 3,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_3 = {
+    name = "aim_3",
+    fov = 29,
+    smooth = 4,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_4 = {
+    name = "aim_4",
+    fov = 32,
+    smooth = 5,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_5 = {
+    name = "aim_5",
+    fov = 35,
+    smooth = 6,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_6 = {
+    name = "aim_6",
+    fov = 38,
+    smooth = 7,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_7 = {
+    name = "aim_7",
+    fov = 41,
+    smooth = 8,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_8 = {
+    name = "aim_8",
+    fov = 44,
+    smooth = 9,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_9 = {
+    name = "aim_9",
+    fov = 47,
+    smooth = 10,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_10 = {
+    name = "aim_10",
+    fov = 50,
+    smooth = 11,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_11 = {
+    name = "aim_11",
+    fov = 53,
+    smooth = 12,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_12 = {
+    name = "aim_12",
+    fov = 56,
+    smooth = 13,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_13 = {
+    name = "aim_13",
+    fov = 59,
+    smooth = 14,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_14 = {
+    name = "aim_14",
+    fov = 62,
+    smooth = 15,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_15 = {
+    name = "aim_15",
+    fov = 65,
+    smooth = 16,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_16 = {
+    name = "aim_16",
+    fov = 68,
+    smooth = 17,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_17 = {
+    name = "aim_17",
+    fov = 71,
+    smooth = 18,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_18 = {
+    name = "aim_18",
+    fov = 74,
+    smooth = 19,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_19 = {
+    name = "aim_19",
+    fov = 77,
+    smooth = 20,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_20 = {
+    name = "aim_20",
+    fov = 80,
+    smooth = 1,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_21 = {
+    name = "aim_21",
+    fov = 83,
+    smooth = 2,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_22 = {
+    name = "aim_22",
+    fov = 86,
+    smooth = 3,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_23 = {
+    name = "aim_23",
+    fov = 89,
+    smooth = 4,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_24 = {
+    name = "aim_24",
+    fov = 92,
+    smooth = 5,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_25 = {
+    name = "aim_25",
+    fov = 95,
+    smooth = 6,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_26 = {
+    name = "aim_26",
+    fov = 98,
+    smooth = 7,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_27 = {
+    name = "aim_27",
+    fov = 101,
+    smooth = 8,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_28 = {
+    name = "aim_28",
+    fov = 104,
+    smooth = 9,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_29 = {
+    name = "aim_29",
+    fov = 107,
+    smooth = 10,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_30 = {
+    name = "aim_30",
+    fov = 110,
+    smooth = 11,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_31 = {
+    name = "aim_31",
+    fov = 113,
+    smooth = 12,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_32 = {
+    name = "aim_32",
+    fov = 116,
+    smooth = 13,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_33 = {
+    name = "aim_33",
+    fov = 119,
+    smooth = 14,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_34 = {
+    name = "aim_34",
+    fov = 122,
+    smooth = 15,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_35 = {
+    name = "aim_35",
+    fov = 125,
+    smooth = 16,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_36 = {
+    name = "aim_36",
+    fov = 128,
+    smooth = 17,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_37 = {
+    name = "aim_37",
+    fov = 131,
+    smooth = 18,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_38 = {
+    name = "aim_38",
+    fov = 134,
+    smooth = 19,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_39 = {
+    name = "aim_39",
+    fov = 137,
+    smooth = 20,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_40 = {
+    name = "aim_40",
+    fov = 140,
+    smooth = 1,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_41 = {
+    name = "aim_41",
+    fov = 143,
+    smooth = 2,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_42 = {
+    name = "aim_42",
+    fov = 146,
+    smooth = 3,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_43 = {
+    name = "aim_43",
+    fov = 149,
+    smooth = 4,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_44 = {
+    name = "aim_44",
+    fov = 152,
+    smooth = 5,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_45 = {
+    name = "aim_45",
+    fov = 155,
+    smooth = 6,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_46 = {
+    name = "aim_46",
+    fov = 158,
+    smooth = 7,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_47 = {
+    name = "aim_47",
+    fov = 161,
+    smooth = 8,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_48 = {
+    name = "aim_48",
+    fov = 164,
+    smooth = 9,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_49 = {
+    name = "aim_49",
+    fov = 167,
+    smooth = 10,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_50 = {
+    name = "aim_50",
+    fov = 170,
+    smooth = 11,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_51 = {
+    name = "aim_51",
+    fov = 173,
+    smooth = 12,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_52 = {
+    name = "aim_52",
+    fov = 176,
+    smooth = 13,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_53 = {
+    name = "aim_53",
+    fov = 179,
+    smooth = 14,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_54 = {
+    name = "aim_54",
+    fov = 182,
+    smooth = 15,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_55 = {
+    name = "aim_55",
+    fov = 185,
+    smooth = 16,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_56 = {
+    name = "aim_56",
+    fov = 188,
+    smooth = 17,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_57 = {
+    name = "aim_57",
+    fov = 191,
+    smooth = 18,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_58 = {
+    name = "aim_58",
+    fov = 194,
+    smooth = 19,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_59 = {
+    name = "aim_59",
+    fov = 197,
+    smooth = 20,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_60 = {
+    name = "aim_60",
+    fov = 200,
+    smooth = 1,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_61 = {
+    name = "aim_61",
+    fov = 203,
+    smooth = 2,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_62 = {
+    name = "aim_62",
+    fov = 206,
+    smooth = 3,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_63 = {
+    name = "aim_63",
+    fov = 209,
+    smooth = 4,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_64 = {
+    name = "aim_64",
+    fov = 212,
+    smooth = 5,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_65 = {
+    name = "aim_65",
+    fov = 215,
+    smooth = 6,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_66 = {
+    name = "aim_66",
+    fov = 218,
+    smooth = 7,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_67 = {
+    name = "aim_67",
+    fov = 221,
+    smooth = 8,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_68 = {
+    name = "aim_68",
+    fov = 224,
+    smooth = 9,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_69 = {
+    name = "aim_69",
+    fov = 227,
+    smooth = 10,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_70 = {
+    name = "aim_70",
+    fov = 230,
+    smooth = 11,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_71 = {
+    name = "aim_71",
+    fov = 233,
+    smooth = 12,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_72 = {
+    name = "aim_72",
+    fov = 236,
+    smooth = 13,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_73 = {
+    name = "aim_73",
+    fov = 239,
+    smooth = 14,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_74 = {
+    name = "aim_74",
+    fov = 242,
+    smooth = 15,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_75 = {
+    name = "aim_75",
+    fov = 245,
+    smooth = 16,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_76 = {
+    name = "aim_76",
+    fov = 248,
+    smooth = 17,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_77 = {
+    name = "aim_77",
+    fov = 251,
+    smooth = 18,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_78 = {
+    name = "aim_78",
+    fov = 254,
+    smooth = 19,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_79 = {
+    name = "aim_79",
+    fov = 257,
+    smooth = 20,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_80 = {
+    name = "aim_80",
+    fov = 260,
+    smooth = 1,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_81 = {
+    name = "aim_81",
+    fov = 263,
+    smooth = 2,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_82 = {
+    name = "aim_82",
+    fov = 266,
+    smooth = 3,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_83 = {
+    name = "aim_83",
+    fov = 269,
+    smooth = 4,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_84 = {
+    name = "aim_84",
+    fov = 272,
+    smooth = 5,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_85 = {
+    name = "aim_85",
+    fov = 275,
+    smooth = 6,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_86 = {
+    name = "aim_86",
+    fov = 278,
+    smooth = 7,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_87 = {
+    name = "aim_87",
+    fov = 281,
+    smooth = 8,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_88 = {
+    name = "aim_88",
+    fov = 284,
+    smooth = 9,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_89 = {
+    name = "aim_89",
+    fov = 287,
+    smooth = 10,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_90 = {
+    name = "aim_90",
+    fov = 290,
+    smooth = 11,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_91 = {
+    name = "aim_91",
+    fov = 293,
+    smooth = 12,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_92 = {
+    name = "aim_92",
+    fov = 296,
+    smooth = 13,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_93 = {
+    name = "aim_93",
+    fov = 299,
+    smooth = 14,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_94 = {
+    name = "aim_94",
+    fov = 302,
+    smooth = 15,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_95 = {
+    name = "aim_95",
+    fov = 305,
+    smooth = 16,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_96 = {
+    name = "aim_96",
+    fov = 308,
+    smooth = 17,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_97 = {
+    name = "aim_97",
+    fov = 311,
+    smooth = 18,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_98 = {
+    name = "aim_98",
+    fov = 314,
+    smooth = 19,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_99 = {
+    name = "aim_99",
+    fov = 317,
+    smooth = 20,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_100 = {
+    name = "aim_100",
+    fov = 320,
+    smooth = 1,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_101 = {
+    name = "aim_101",
+    fov = 323,
+    smooth = 2,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_102 = {
+    name = "aim_102",
+    fov = 326,
+    smooth = 3,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_103 = {
+    name = "aim_103",
+    fov = 329,
+    smooth = 4,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_104 = {
+    name = "aim_104",
+    fov = 332,
+    smooth = 5,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_105 = {
+    name = "aim_105",
+    fov = 335,
+    smooth = 6,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_106 = {
+    name = "aim_106",
+    fov = 338,
+    smooth = 7,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_107 = {
+    name = "aim_107",
+    fov = 341,
+    smooth = 8,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_108 = {
+    name = "aim_108",
+    fov = 344,
+    smooth = 9,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_109 = {
+    name = "aim_109",
+    fov = 347,
+    smooth = 10,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_110 = {
+    name = "aim_110",
+    fov = 350,
+    smooth = 11,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_111 = {
+    name = "aim_111",
+    fov = 353,
+    smooth = 12,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_112 = {
+    name = "aim_112",
+    fov = 356,
+    smooth = 13,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_113 = {
+    name = "aim_113",
+    fov = 359,
+    smooth = 14,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_114 = {
+    name = "aim_114",
+    fov = 362,
+    smooth = 15,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_115 = {
+    name = "aim_115",
+    fov = 365,
+    smooth = 16,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_116 = {
+    name = "aim_116",
+    fov = 368,
+    smooth = 17,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_117 = {
+    name = "aim_117",
+    fov = 371,
+    smooth = 18,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[2],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowAimProfiles.aim_118 = {
+    name = "aim_118",
+    fov = 374,
+    smooth = 19,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[3],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[2],
+}
+getgenv().MeowAimProfiles.aim_119 = {
+    name = "aim_119",
+    fov = 377,
+    smooth = 20,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[4],
+    wallcheck = false,
+    target_mode = ({"closest","fov","random"})[3],
+}
+getgenv().MeowAimProfiles.aim_120 = {
+    name = "aim_120",
+    fov = 380,
+    smooth = 1,
+    hitbox = ({"Head","UpperTorso","Torso","HumanoidRootPart"})[1],
+    wallcheck = true,
+    target_mode = ({"closest","fov","random"})[1],
+}
+getgenv().MeowChatBank = {
+    "got em",
+    "ez clap",
+    "no aim",
+    "sit down",
+    "cooked",
+    "down bad",
+    "cry about it",
+    "beat by meowlua",
+    "cope",
+    "mald",
+    "touch grass",
+    "skill issue",
+    "ratio",
+    "lol",
+    "lmao",
+    "+1",
+    "gg ez",
+    "take the l",
+    "L bozo",
+    "mid",
+    "clapped",
+    "diff",
+    "broke",
+    "fried",
+    "owned",
+    "bodied",
+    "dusted",
+    "deleted",
+    "gone",
+    "sent",
+    "goodbye",
+    "see ya",
+    "bye bye",
+    "next",
+    "done",
+    "finished",
+    "over",
+    "closed",
+    "sleep",
+    "nap time",
+    "dinner",
+    "bedtime",
+    "tucked in",
+    "shhh",
+    "quiet",
+    "silence",
+    "muted",
+    "banned",
+    "kicked",
+    "removed",
+    "wiped",
+}
+getgenv().MeowPrioLists = {}
+getgenv().MeowPrioLists.list_1 = {
+    name = "list_1",
+    targets = { "target_1_a", "target_1_b", "target_1_c" },
+    weight  = 2,
+}
+getgenv().MeowPrioLists.list_2 = {
+    name = "list_2",
+    targets = { "target_2_a", "target_2_b", "target_2_c" },
+    weight  = 3,
+}
+getgenv().MeowPrioLists.list_3 = {
+    name = "list_3",
+    targets = { "target_3_a", "target_3_b", "target_3_c" },
+    weight  = 4,
+}
+getgenv().MeowPrioLists.list_4 = {
+    name = "list_4",
+    targets = { "target_4_a", "target_4_b", "target_4_c" },
+    weight  = 5,
+}
+getgenv().MeowPrioLists.list_5 = {
+    name = "list_5",
+    targets = { "target_5_a", "target_5_b", "target_5_c" },
+    weight  = 6,
+}
+getgenv().MeowPrioLists.list_6 = {
+    name = "list_6",
+    targets = { "target_6_a", "target_6_b", "target_6_c" },
+    weight  = 7,
+}
+getgenv().MeowPrioLists.list_7 = {
+    name = "list_7",
+    targets = { "target_7_a", "target_7_b", "target_7_c" },
+    weight  = 8,
+}
+getgenv().MeowPrioLists.list_8 = {
+    name = "list_8",
+    targets = { "target_8_a", "target_8_b", "target_8_c" },
+    weight  = 9,
+}
+getgenv().MeowPrioLists.list_9 = {
+    name = "list_9",
+    targets = { "target_9_a", "target_9_b", "target_9_c" },
+    weight  = 10,
+}
+getgenv().MeowPrioLists.list_10 = {
+    name = "list_10",
+    targets = { "target_10_a", "target_10_b", "target_10_c" },
+    weight  = 1,
+}
+getgenv().MeowPrioLists.list_11 = {
+    name = "list_11",
+    targets = { "target_11_a", "target_11_b", "target_11_c" },
+    weight  = 2,
+}
+getgenv().MeowPrioLists.list_12 = {
+    name = "list_12",
+    targets = { "target_12_a", "target_12_b", "target_12_c" },
+    weight  = 3,
+}
+getgenv().MeowPrioLists.list_13 = {
+    name = "list_13",
+    targets = { "target_13_a", "target_13_b", "target_13_c" },
+    weight  = 4,
+}
+getgenv().MeowPrioLists.list_14 = {
+    name = "list_14",
+    targets = { "target_14_a", "target_14_b", "target_14_c" },
+    weight  = 5,
+}
+getgenv().MeowPrioLists.list_15 = {
+    name = "list_15",
+    targets = { "target_15_a", "target_15_b", "target_15_c" },
+    weight  = 6,
+}
+getgenv().MeowPrioLists.list_16 = {
+    name = "list_16",
+    targets = { "target_16_a", "target_16_b", "target_16_c" },
+    weight  = 7,
+}
+getgenv().MeowPrioLists.list_17 = {
+    name = "list_17",
+    targets = { "target_17_a", "target_17_b", "target_17_c" },
+    weight  = 8,
+}
+getgenv().MeowPrioLists.list_18 = {
+    name = "list_18",
+    targets = { "target_18_a", "target_18_b", "target_18_c" },
+    weight  = 9,
+}
+getgenv().MeowPrioLists.list_19 = {
+    name = "list_19",
+    targets = { "target_19_a", "target_19_b", "target_19_c" },
+    weight  = 10,
+}
+getgenv().MeowPrioLists.list_20 = {
+    name = "list_20",
+    targets = { "target_20_a", "target_20_b", "target_20_c" },
+    weight  = 1,
+}
+getgenv().MeowPrioLists.list_21 = {
+    name = "list_21",
+    targets = { "target_21_a", "target_21_b", "target_21_c" },
+    weight  = 2,
+}
+getgenv().MeowPrioLists.list_22 = {
+    name = "list_22",
+    targets = { "target_22_a", "target_22_b", "target_22_c" },
+    weight  = 3,
+}
+getgenv().MeowPrioLists.list_23 = {
+    name = "list_23",
+    targets = { "target_23_a", "target_23_b", "target_23_c" },
+    weight  = 4,
+}
+getgenv().MeowPrioLists.list_24 = {
+    name = "list_24",
+    targets = { "target_24_a", "target_24_b", "target_24_c" },
+    weight  = 5,
+}
+getgenv().MeowPrioLists.list_25 = {
+    name = "list_25",
+    targets = { "target_25_a", "target_25_b", "target_25_c" },
+    weight  = 6,
+}
+getgenv().MeowPrioLists.list_26 = {
+    name = "list_26",
+    targets = { "target_26_a", "target_26_b", "target_26_c" },
+    weight  = 7,
+}
+getgenv().MeowPrioLists.list_27 = {
+    name = "list_27",
+    targets = { "target_27_a", "target_27_b", "target_27_c" },
+    weight  = 8,
+}
+getgenv().MeowPrioLists.list_28 = {
+    name = "list_28",
+    targets = { "target_28_a", "target_28_b", "target_28_c" },
+    weight  = 9,
+}
+getgenv().MeowPrioLists.list_29 = {
+    name = "list_29",
+    targets = { "target_29_a", "target_29_b", "target_29_c" },
+    weight  = 10,
+}
+getgenv().MeowPrioLists.list_30 = {
+    name = "list_30",
+    targets = { "target_30_a", "target_30_b", "target_30_c" },
+    weight  = 1,
+}
+getgenv().MeowPrioLists.list_31 = {
+    name = "list_31",
+    targets = { "target_31_a", "target_31_b", "target_31_c" },
+    weight  = 2,
+}
+getgenv().MeowPrioLists.list_32 = {
+    name = "list_32",
+    targets = { "target_32_a", "target_32_b", "target_32_c" },
+    weight  = 3,
+}
+getgenv().MeowPrioLists.list_33 = {
+    name = "list_33",
+    targets = { "target_33_a", "target_33_b", "target_33_c" },
+    weight  = 4,
+}
+getgenv().MeowPrioLists.list_34 = {
+    name = "list_34",
+    targets = { "target_34_a", "target_34_b", "target_34_c" },
+    weight  = 5,
+}
+getgenv().MeowPrioLists.list_35 = {
+    name = "list_35",
+    targets = { "target_35_a", "target_35_b", "target_35_c" },
+    weight  = 6,
+}
+getgenv().MeowPrioLists.list_36 = {
+    name = "list_36",
+    targets = { "target_36_a", "target_36_b", "target_36_c" },
+    weight  = 7,
+}
+getgenv().MeowPrioLists.list_37 = {
+    name = "list_37",
+    targets = { "target_37_a", "target_37_b", "target_37_c" },
+    weight  = 8,
+}
+getgenv().MeowPrioLists.list_38 = {
+    name = "list_38",
+    targets = { "target_38_a", "target_38_b", "target_38_c" },
+    weight  = 9,
+}
+getgenv().MeowPrioLists.list_39 = {
+    name = "list_39",
+    targets = { "target_39_a", "target_39_b", "target_39_c" },
+    weight  = 10,
+}
+getgenv().MeowPrioLists.list_40 = {
+    name = "list_40",
+    targets = { "target_40_a", "target_40_b", "target_40_c" },
+    weight  = 1,
+}
+getgenv().MeowPrioLists.list_41 = {
+    name = "list_41",
+    targets = { "target_41_a", "target_41_b", "target_41_c" },
+    weight  = 2,
+}
+getgenv().MeowPrioLists.list_42 = {
+    name = "list_42",
+    targets = { "target_42_a", "target_42_b", "target_42_c" },
+    weight  = 3,
+}
+getgenv().MeowPrioLists.list_43 = {
+    name = "list_43",
+    targets = { "target_43_a", "target_43_b", "target_43_c" },
+    weight  = 4,
+}
+getgenv().MeowPrioLists.list_44 = {
+    name = "list_44",
+    targets = { "target_44_a", "target_44_b", "target_44_c" },
+    weight  = 5,
+}
+getgenv().MeowPrioLists.list_45 = {
+    name = "list_45",
+    targets = { "target_45_a", "target_45_b", "target_45_c" },
+    weight  = 6,
+}
+getgenv().MeowPrioLists.list_46 = {
+    name = "list_46",
+    targets = { "target_46_a", "target_46_b", "target_46_c" },
+    weight  = 7,
+}
+getgenv().MeowPrioLists.list_47 = {
+    name = "list_47",
+    targets = { "target_47_a", "target_47_b", "target_47_c" },
+    weight  = 8,
+}
+getgenv().MeowPrioLists.list_48 = {
+    name = "list_48",
+    targets = { "target_48_a", "target_48_b", "target_48_c" },
+    weight  = 9,
+}
+getgenv().MeowPrioLists.list_49 = {
+    name = "list_49",
+    targets = { "target_49_a", "target_49_b", "target_49_c" },
+    weight  = 10,
+}
+getgenv().MeowPrioLists.list_50 = {
+    name = "list_50",
+    targets = { "target_50_a", "target_50_b", "target_50_c" },
+    weight  = 1,
+}
+getgenv().MeowPrioLists.list_51 = {
+    name = "list_51",
+    targets = { "target_51_a", "target_51_b", "target_51_c" },
+    weight  = 2,
+}
+getgenv().MeowPrioLists.list_52 = {
+    name = "list_52",
+    targets = { "target_52_a", "target_52_b", "target_52_c" },
+    weight  = 3,
+}
+getgenv().MeowPrioLists.list_53 = {
+    name = "list_53",
+    targets = { "target_53_a", "target_53_b", "target_53_c" },
+    weight  = 4,
+}
+getgenv().MeowPrioLists.list_54 = {
+    name = "list_54",
+    targets = { "target_54_a", "target_54_b", "target_54_c" },
+    weight  = 5,
+}
+getgenv().MeowPrioLists.list_55 = {
+    name = "list_55",
+    targets = { "target_55_a", "target_55_b", "target_55_c" },
+    weight  = 6,
+}
+getgenv().MeowPrioLists.list_56 = {
+    name = "list_56",
+    targets = { "target_56_a", "target_56_b", "target_56_c" },
+    weight  = 7,
+}
+getgenv().MeowPrioLists.list_57 = {
+    name = "list_57",
+    targets = { "target_57_a", "target_57_b", "target_57_c" },
+    weight  = 8,
+}
+getgenv().MeowPrioLists.list_58 = {
+    name = "list_58",
+    targets = { "target_58_a", "target_58_b", "target_58_c" },
+    weight  = 9,
+}
+getgenv().MeowPrioLists.list_59 = {
+    name = "list_59",
+    targets = { "target_59_a", "target_59_b", "target_59_c" },
+    weight  = 10,
+}
+getgenv().MeowPrioLists.list_60 = {
+    name = "list_60",
+    targets = { "target_60_a", "target_60_b", "target_60_c" },
+    weight  = 1,
+}
+getgenv().MeowKeybindPresets = {}
+getgenv().MeowKeybindPresets.keys_1 = {
+    name = "keys_1",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[2],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[2],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_2 = {
+    name = "keys_2",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[3],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[3],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_3 = {
+    name = "keys_3",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[4],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[4],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_4 = {
+    name = "keys_4",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[5],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[5],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_5 = {
+    name = "keys_5",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[6],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[6],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_6 = {
+    name = "keys_6",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[7],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[7],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_7 = {
+    name = "keys_7",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[8],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[8],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_8 = {
+    name = "keys_8",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[9],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[9],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_9 = {
+    name = "keys_9",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[10],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[10],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_10 = {
+    name = "keys_10",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[11],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[1],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_11 = {
+    name = "keys_11",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[12],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[2],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_12 = {
+    name = "keys_12",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[1],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[3],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_13 = {
+    name = "keys_13",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[2],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[4],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_14 = {
+    name = "keys_14",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[3],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[5],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_15 = {
+    name = "keys_15",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[4],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[6],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_16 = {
+    name = "keys_16",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[5],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[7],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_17 = {
+    name = "keys_17",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[6],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[8],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_18 = {
+    name = "keys_18",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[7],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[9],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_19 = {
+    name = "keys_19",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[8],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[10],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_20 = {
+    name = "keys_20",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[9],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[1],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_21 = {
+    name = "keys_21",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[10],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[2],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_22 = {
+    name = "keys_22",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[11],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[3],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_23 = {
+    name = "keys_23",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[12],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[4],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_24 = {
+    name = "keys_24",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[1],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[5],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_25 = {
+    name = "keys_25",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[2],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[6],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_26 = {
+    name = "keys_26",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[3],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[7],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_27 = {
+    name = "keys_27",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[4],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[8],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_28 = {
+    name = "keys_28",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[5],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[9],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_29 = {
+    name = "keys_29",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[6],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[10],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_30 = {
+    name = "keys_30",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[7],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[1],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_31 = {
+    name = "keys_31",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[8],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[2],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_32 = {
+    name = "keys_32",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[9],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[3],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_33 = {
+    name = "keys_33",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[10],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[4],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_34 = {
+    name = "keys_34",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[11],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[5],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_35 = {
+    name = "keys_35",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[12],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[6],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_36 = {
+    name = "keys_36",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[1],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[7],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_37 = {
+    name = "keys_37",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[2],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[8],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_38 = {
+    name = "keys_38",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[3],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[9],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_39 = {
+    name = "keys_39",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[4],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[10],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_40 = {
+    name = "keys_40",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[5],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[1],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_41 = {
+    name = "keys_41",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[6],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[2],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_42 = {
+    name = "keys_42",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[7],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[3],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_43 = {
+    name = "keys_43",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[8],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[4],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_44 = {
+    name = "keys_44",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[9],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[5],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_45 = {
+    name = "keys_45",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[10],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[6],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_46 = {
+    name = "keys_46",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[11],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[7],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_47 = {
+    name = "keys_47",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[12],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[8],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_48 = {
+    name = "keys_48",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[1],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[9],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_49 = {
+    name = "keys_49",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[2],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[10],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_50 = {
+    name = "keys_50",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[3],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[1],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_51 = {
+    name = "keys_51",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[4],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[2],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_52 = {
+    name = "keys_52",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[5],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[3],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+getgenv().MeowKeybindPresets.keys_53 = {
+    name = "keys_53",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[6],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[4],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[6],
+}
+getgenv().MeowKeybindPresets.keys_54 = {
+    name = "keys_54",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[7],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[5],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[7],
+}
+getgenv().MeowKeybindPresets.keys_55 = {
+    name = "keys_55",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[8],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[6],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[2],
+    fly = ({"F","Y","H","J","K","U","I","O"})[8],
+}
+getgenv().MeowKeybindPresets.keys_56 = {
+    name = "keys_56",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[9],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[7],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[3],
+    fly = ({"F","Y","H","J","K","U","I","O"})[1],
+}
+getgenv().MeowKeybindPresets.keys_57 = {
+    name = "keys_57",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[10],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[8],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[4],
+    fly = ({"F","Y","H","J","K","U","I","O"})[2],
+}
+getgenv().MeowKeybindPresets.keys_58 = {
+    name = "keys_58",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[11],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[9],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[5],
+    fly = ({"F","Y","H","J","K","U","I","O"})[3],
+}
+getgenv().MeowKeybindPresets.keys_59 = {
+    name = "keys_59",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[12],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[10],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[6],
+    fly = ({"F","Y","H","J","K","U","I","O"})[4],
+}
+getgenv().MeowKeybindPresets.keys_60 = {
+    name = "keys_60",
+    panic = ({"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"})[1],
+    silent_aim = ({"E","Q","R","F","G","C","V","B","X","Z"})[1],
+    aimbot = ({"LeftShift","RightShift","MouseButton2","Z","X","C"})[1],
+    fly = ({"F","Y","H","J","K","U","I","O"})[5],
+}
+
+getgenv().meow_chat_random = function()
+    local bank = getgenv().MeowChatBank
+    return bank[math.random(1, #bank)]
+end
+notify('meowlua', 'bulk 2 loaded: 300 evasion shapes, 120 aim profiles, 60 prio lists, 60 keybind presets, chat bank')
