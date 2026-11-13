@@ -2871,7 +2871,7 @@ end
 -- STATS HUD — top-right overlay with every counter
 -- =========================================================================
 local stats_gui, stats_lbl
-function getgenv().start_stats_hud()
+getgenv().start_stats_hud = function()
     if stats_gui then stats_gui:Destroy() end
     stats_gui = Instance.new("ScreenGui"); stats_gui.Name = "MeowStats"; stats_gui.IgnoreGuiInset = true
     pcall(function() stats_gui.Parent = CoreGui end)
@@ -2929,7 +2929,7 @@ function getgenv().start_stats_hud()
         )
     end))
 end
-function getgenv().stop_stats_hud()
+getgenv().stop_stats_hud = function()
     killConn("stats_render")
     if stats_gui then stats_gui:Destroy(); stats_gui = nil end
 end
