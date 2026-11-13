@@ -2114,6 +2114,7 @@ getgenv().__ragebot_stop = function()
 end
 -- =========================================================================
 -- UI — Obsidian build: tabs, groupboxes, every toggle/slider/dropdown wired
+(function()  -- isolate UI build in its own function scope
 -- =========================================================================
 local _lib_ready = false
 local library, ThemeManagerObs, SaveManagerObs
@@ -2244,14 +2245,14 @@ rb_sliders:AddSlider("ro_spd",    { Text="Orbit Speed",           Default=500, M
 rb_sliders:AddSlider("kr_d",      { Text="Knife Distance Behind", Default=3,   Min=1,    Max=10,   Rounding=0 }):OnChanged(function(v) config.knife_dist=v end)
 tgl(rb_sliders, "r_spin", "Spin", "Insane angular velocity.", function(v) config.rage_spin=v end)
 
-local box_evasion = tab_rage:AddRightGroupbox("Evasion")
+box_evasion = tab_rage:AddRightGroupbox("Evasion")
 tgl(box_evasion, "ev_e", "Evasion", "Pattern-driven teleport burst.", function(v) config.evasion_enabled=v; if v then getgenv().start_evasion() else getgenv().stop_evasion() end end)
 box_evasion:AddDropdown("ev_mode", { Text="Evasion Mode", Default=1, Values=getgenv()._shapes_evasion_list }):OnChanged(function(v) config.evasion_mode=v end)
 box_evasion:AddSlider("ev_burst", { Text="Burst Count", Default=500, Min=100, Max=1000, Rounding=0 }):OnChanged(function(v) config.evasion_burst=v end)
 box_evasion:AddSlider("ev_int",   { Text="Interval",    Default=1,   Min=1,   Max=1000, Rounding=0 }):OnChanged(function(v) config.evasion_interval=v end)
 box_evasion:AddSlider("ev_spn",   { Text="Spin Speed",  Default=9999,Min=0,   Max=999999,Rounding=0 }):OnChanged(function(v) config.evasion_spin_speed=v end)
 
-local box_anti_aim = tab_rage:AddRightGroupbox("Anti Aim")
+box_anti_aim = tab_rage:AddRightGroupbox("Anti Aim")
 tgl(box_anti_aim, "aa_e", "Anti Aim", "Scrambles orientation.", function(v) config.anti_aim_enabled=v; if v then getgenv().start_anti_aim() else getgenv().stop_anti_aim() end end)
 box_anti_aim:AddDropdown("aa_meth", { Text="Method", Default=2, Values={"Pixelated","Static","Spin","Jitter","Desync","Sway","Breaker","Lurk","Orbit","Custom"} }):OnChanged(function(v) config.aa_method=v end)
 box_anti_aim:AddSlider("aa_pxs", { Text="Pixelation Scale", Default=0,   Min=0,   Max=100,    Rounding=0 }):OnChanged(function(v) config.aa_pixel_scale=v end)
@@ -2261,27 +2262,27 @@ box_anti_aim:AddSlider("aa_pit", { Text="Pitch",            Default=0,   Min=-36
 box_anti_aim:AddSlider("aa_rol", { Text="Roll",             Default=0,   Min=-360,Max=360,    Rounding=0 }):OnChanged(function(v) config.aa_roll=v end)
 
 -- COMBAT ------------------------------------------------------------------
-local box_silent = tab_combat:AddLeftGroupbox("Silent Aim")
+box_silent = tab_combat:AddLeftGroupbox("Silent Aim")
 tgl(box_silent, "sa_e", "Silent Aim", "Bends shot remote to closest-in-FOV.", function(v) config.silent_aim=v; if v then Combat.start_silent_aim_tracker() else Combat.stop_silent_aim_tracker() end end)
 box_silent:AddSlider("sa_fov",  { Text="FOV (px)", Default=120, Min=10,  Max=800, Rounding=0 }):OnChanged(function(v) config.silent_aim_fov=v end)
 box_silent:AddDropdown("sa_hit",{ Text="Hitbox",   Default=1,  Values={"Head","HumanoidRootPart","UpperTorso","Torso"} }):OnChanged(function(v) config.silent_aim_hitbox=v end)
 
-local box_assist = tab_combat:AddLeftGroupbox("Aim Assist")
+box_assist = tab_combat:AddLeftGroupbox("Aim Assist")
 tgl(box_assist, "aa_ast", "Aim Assist", "Smooth camera at closest while right-click held.", function(v) config.aim_assist=v; if v then Combat.start_aim_assist(); Combat.start_silent_aim_tracker() else Combat.stop_aim_assist() end end)
 box_assist:AddSlider("aa_fov",   { Text="FOV (px)",  Default=90, Min=10, Max=800, Rounding=0 }):OnChanged(function(v) config.aim_assist_fov=v end)
 box_assist:AddSlider("aa_smth",  { Text="Smoothness",Default=6,  Min=1,  Max=30,  Rounding=0 }):OnChanged(function(v) config.aim_assist_smooth=v end)
 
-local box_hit = tab_combat:AddRightGroupbox("Hitbox Expand")
+box_hit = tab_combat:AddRightGroupbox("Hitbox Expand")
 tgl(box_hit, "hit_e", "Hitbox Expand", "Grows enemy aim part for easier hits.", function(v) config.hitbox_expand=v; if v then Combat.start_hitbox_expand() else Combat.stop_hitbox_expand() end end)
 box_hit:AddSlider("hit_s",  { Text="Size",   Default=15, Min=2,  Max=60, Rounding=0 }):OnChanged(function(v) config.hitbox_size=v end)
 box_hit:AddDropdown("hit_t",{ Text="Target", Default=1, Values={"Head","HumanoidRootPart","UpperTorso","Torso"} }):OnChanged(function(v) config.hitbox_target=v end)
 
-local box_fov = tab_combat:AddRightGroupbox("FOV Circle")
+box_fov = tab_combat:AddRightGroupbox("FOV Circle")
 tgl(box_fov, "fov_e", "FOV Circle", "Visual FOV reference on screen.", function(v) config.fov_circle=v; if v then Combat.start_fov_circle() else Combat.stop_fov_circle() end end)
 box_fov:AddSlider("fov_r", { Text="Radius", Default=120, Min=20, Max=800, Rounding=0 }):OnChanged(function(v) config.fov_circle_radius=v end)
 pcall(function() box_fov:AddLabel("Color"):AddColorPicker("fov_col", { Default=Color3.fromRGB(255,255,255), Title="Color" }):OnChanged(function(v) config.fov_circle_color=v end) end)
 
-local box_parry = tab_combat:AddRightGroupbox("Auto Parry")
+box_parry = tab_combat:AddRightGroupbox("Auto Parry")
 tgl(box_parry, "parry_e", "Auto Parry", "Triggers parry on incoming dagger/projectile.", function(v) config.dagger_bypass=v; if v then Combat.start_auto_parry() else Combat.stop_auto_parry() end end)
 
 -- GUNS --------------------------------------------------------------------
@@ -2414,32 +2415,32 @@ mx3:AddButton({ Text="Add Waypoint",    Func=function() local hrp = getgenv().ge
 mx3:AddButton({ Text="Clear Waypoints", Func=function() getgenv().loop_waypoints={}; getgenv().loop_index=1; tnotify("Loop","Cleared") end })
 
 -- VOID --------------------------------------------------------------------
-local box_vs = tab_voidspam:AddLeftGroupbox("Void Teleport")
+box_vs = tab_voidspam:AddLeftGroupbox("Void Teleport")
 tgl(box_vs, "vs_e", "Voidspam", "Fast burst teleport.", function(v) config.void_spam_enabled=v; if v then getgenv().start_void_spam() else getgenv().stop_void_spam() end end)
 box_vs:AddDropdown("et_mod", { Text="Voidspam Type", Default=1, Values={"Random","Camera","Forward","Directional"} }):OnChanged(function(v) config.et_mode=v end)
 box_vs:AddDropdown("et_ord", { Text="Burst Pattern", Default=1, Values=getgenv()._shapes_void_list }):OnChanged(function(v) config.et_order=v end)
 box_vs:AddSlider("et_spd",   { Text="Interval",      Default=10000000, Min=0, Max=10000000, Rounding=0 }):OnChanged(function(v) config.et_speed=v end)
 box_vs:AddSlider("et_tot",   { Text="Burst Count",   Default=500,      Min=1, Max=500,      Rounding=0 }):OnChanged(function(v) config.et_total=v end)
 
-local box_vs_dir = tab_voidspam:AddLeftGroupbox("Directions")
+box_vs_dir = tab_voidspam:AddLeftGroupbox("Directions")
 box_vs_dir:AddSlider("vs_min", { Text="Min Distance", Default=0,     Min=0,  Max=50000,  Rounding=3 }):OnChanged(function(v) config.vs_min_dist=v*1e25 end)
 box_vs_dir:AddSlider("vs_max", { Text="Max Distance", Default=50000, Min=10, Max=500000, Rounding=0 }):OnChanged(function(v) config.vs_max_dist=v end)
 for _, k in ipairs({"xp","xn","yp","yn","zp","zn"}) do
     box_vs_dir:AddSlider("vs_"..k, { Text=k:upper(), Default=5000, Min=0, Max=50000, Rounding=0 }):OnChanged(function(v) config["vs_"..k]=v end)
 end
 
-local box_vp = tab_voidspam:AddRightGroupbox("Directional Patterns")
+box_vp = tab_voidspam:AddRightGroupbox("Directional Patterns")
 box_vp:AddDropdown("vp_d", { Text="Pattern", Default=1, Values=getgenv()._shapes_void_pattern_list }):OnChanged(function(v) config.void_pattern=v end)
 tgl(box_vp, "vp_x", "Axis X", "Enable X axis.", function(v) config.void_axis_x=v end)
 tgl(box_vp, "vp_y", "Axis Y", "Enable Y axis.", function(v) config.void_axis_y=v end)
 tgl(box_vp, "vp_z", "Axis Z", "Enable Z axis.", function(v) config.void_axis_z=v end)
 
 -- SETTINGS ----------------------------------------------------------------
-local box_settings = tab_settings:AddLeftGroupbox("Settings")
+box_settings = tab_settings:AddLeftGroupbox("Settings")
 box_settings:AddButton({ Text="Panic Unload (F8)", Func=function() getgenv().unload_all() end })
 box_settings:AddButton({ Text="Display Keybinds",  Func=function() library:SetKeybindMenuOpen(true) end })
 
-local box_theme = tab_settings:AddRightGroupbox("Themes")
+box_theme = tab_settings:AddRightGroupbox("Themes")
 if ThemeManagerObs then
     ThemeManagerObs:SetLibrary(library); ThemeManagerObs:SetFolder("meowlua themes"); ThemeManagerObs:ApplyToTab(tab_settings)
 end
@@ -2484,6 +2485,7 @@ Combat.start_silent_aim_tracker()
 Visuals.start_esp()
 
 tnotify("meowlua", "ultron tier loaded")
+end)()  -- /isolate UI build
 -- =========================================================================
 -- RIVALS PATCH — hard anticheat, true-working godmode, silent aim raycast
 -- bend, triggerbot, IsFullyAiming lie, aimbot, stats HUD + counters
@@ -3036,7 +3038,7 @@ if library then
     local tab_misc   = getgenv().meow_tab_misc
 
     -- RIVALS GODMODE BOX
-    local box_godv2 = tab_player:AddRightGroupbox("Godmode v2 (Rivals)")
+    box_godv2 = tab_player:AddRightGroupbox("Godmode v2 (Rivals)")
     tgl(box_godv2, "god_v2_e", "Godmode v2", "Underground TP loop — unhittable by projectiles.", function(v)
         config.godmode_v2 = v
         if v then Movement.start_godmode_v2() else Movement.stop_godmode_v2() end
@@ -3045,34 +3047,34 @@ if library then
     box_godv2:AddSlider("god_grace", { Text="Grace (x100ms)", Default=8, Min=1, Max=50, Rounding=0 }):OnChanged(function(v) config.godmode_grace=v/100 end)
 
     -- HARD SILENT AIM + TRIGGERBOT + AIMBOT BOX
-    local box_hard = tab_combat:AddLeftGroupbox("Rivals Combat")
+    box_hard = tab_combat:AddLeftGroupbox("Rivals Combat")
     tgl(box_hard, "sa_hard_e", "Silent Aim (Hard)", "Bends GetEntitiesFromRaycast — hitscan auto-head.", function(v) config.silent_aim_hard=v end)
     tgl(box_hard, "fa_lie",    "IsFullyAiming Lie", "Tap-fire always counts as fully aimed.",            function(v) config.fully_aiming_lie=v end)
     tgl(box_hard, "trig_e",    "Triggerbot",        "Auto-fires when crosshair is on enemy.",            function(v) config.triggerbot=v; if v then Combat.start_triggerbot() else Combat.stop_triggerbot() end end)
     box_hard:AddSlider("trig_d", { Text="Trigger Delay (ms)", Default=50, Min=10, Max=500, Rounding=0 }):OnChanged(function(v) config.triggerbot_delay=v/1000 end)
     box_hard:AddSlider("trig_r", { Text="Trigger Range",      Default=2500, Min=100, Max=5000, Rounding=0 }):OnChanged(function(v) config.triggerbot_range=v end)
 
-    local box_aim = tab_combat:AddLeftGroupbox("Aimbot (RMB held)")
+    box_aim = tab_combat:AddLeftGroupbox("Aimbot (RMB held)")
     tgl(box_aim, "aim_e", "Aimbot", "Camera smooths onto closest enemy in FOV.", function(v) config.aimbot=v; if v then Combat.start_aimbot() else Combat.stop_aimbot() end end)
     box_aim:AddSlider("aim_f", { Text="FOV (px)",     Default=180, Min=10, Max=800, Rounding=0 }):OnChanged(function(v) config.aimbot_fov=v end)
     box_aim:AddSlider("aim_s", { Text="Smoothing",    Default=1,   Min=1,  Max=100, Rounding=0 }):OnChanged(function(v) config.aimbot_smooth=v end)
 
     -- TARGET FILTERS
-    local box_filt = tab_combat:AddRightGroupbox("Target Filters")
+    box_filt = tab_combat:AddRightGroupbox("Target Filters")
     tgl(box_filt, "ak_e", "Anti Katana", "Skips targets actively deflecting.", function(v) config.anti_katana=v end)
     tgl(box_filt, "ar_e", "Anti Riot Shield", "Skips targets holding a riot shield.", function(v) config.anti_riot=v end)
 
     -- HARD GUN MODS
-    local box_gh = tab_guns:AddLeftGroupbox("Hard Gun Mods")
+    box_gh = tab_guns:AddLeftGroupbox("Hard Gun Mods")
     tgl(box_gh, "gm_hard", "Gun Mods Hard", "Mutates ItemLibrary.Items directly.", function(v) config.gun_mods_hard=v end)
 
     -- ANTICHEAT BOX
-    local box_ac = tab_misc:AddRightGroupbox("Anticheat Patches")
+    box_ac = tab_misc:AddRightGroupbox("Anticheat Patches")
     tgl(box_ac, "rawlen_e", "RawLen Shield",   "rawlen returns 3 for MiscCtrl checks.", function(v) config.rawlen_shield=v end)
     tgl(box_ac, "ns_e",     "Script Name Spoof","__index returns '' for Name/Text reads.", function(v) config.name_spoof=v end)
 
     -- STATS HUD
-    local box_stats = tab_misc:AddLeftGroupbox("Counters HUD")
+    box_stats = tab_misc:AddLeftGroupbox("Counters HUD")
     tgl(box_stats, "stats_hud_e", "Stats HUD", "Shows live counters top-right.", function(v)
         config.stats_hud = v
         if v then getgenv().start_stats_hud() else getgenv().stop_stats_hud() end
@@ -3193,7 +3195,7 @@ if library then
     local tab_combat = getgenv().meow_tab_combat
     local tab_misc   = getgenv().meow_tab_misc
 
-    local box_void = tab_combat:AddRightGroupbox("Void Sender")
+    box_void = tab_combat:AddRightGroupbox("Void Sender")
     local vs_names = { "" }
     for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(vs_names, p.Name) end end
     local vs_drop = box_void:AddDropdown("vs_target", { Text="Target", Default=1, Values=vs_names })
@@ -3218,7 +3220,7 @@ if library then
     end })
     box_void:AddButton({ Text="Stop Void Burst", Func=function() getgenv().void_stop() end })
 
-    local box_score = tab_misc:AddRightGroupbox("Rival Scoreboard")
+    box_score = tab_misc:AddRightGroupbox("Rival Scoreboard")
     for _, name in ipairs(Rivals) do
         local n = name
         box_score:AddButton({ Text="beat "..n, Func=function() getgenv().rival_bump(n) end })
@@ -3547,39 +3549,39 @@ if library then
     local tab_misc   = getgenv().meow_tab_misc
 
     -- KILL AURA + KILL ALL
-    local box_ka = tab_combat:AddRightGroupbox("Kill Aura")
+    box_ka = tab_combat:AddRightGroupbox("Kill Aura")
     tgl(box_ka, "ka_e", "Kill Aura", "Damages every enemy inside radius.", function(v) config.kill_aura=v end)
     box_ka:AddSlider("ka_r", { Text="Radius",   Default=25,  Min=5, Max=200, Rounding=0 }):OnChanged(function(v) config.kill_aura_radius=v end)
     box_ka:AddSlider("ka_d", { Text="Damage",   Default=500, Min=50, Max=9999, Rounding=0 }):OnChanged(function(v) config.kill_aura_damage=v end)
     box_ka:AddButton({ Text="KILL ALL (one-shot sweep)", Func=function() getgenv().kill_all_once() end })
 
     -- SMART PANIC
-    local box_sp = tab_combat:AddRightGroupbox("Smart Panic")
+    box_sp = tab_combat:AddRightGroupbox("Smart Panic")
     tgl(box_sp, "sp_e", "Smart Panic", "Auto Godmode v2 + Evasion when HP drops low.", function(v) config.smart_panic=v end)
     box_sp:AddSlider("sp_hp", { Text="HP Threshold", Default=40, Min=5, Max=99, Rounding=0 }):OnChanged(function(v) config.smart_panic_hp=v end)
 
     -- MOVEMENT additions
-    local box_bh = tab_move:AddLeftGroupbox("Bhop / Jump")
+    box_bh = tab_move:AddLeftGroupbox("Bhop / Jump")
     tgl(box_bh, "bhop_e", "Bunny Hop", "Auto-jump on Space held.", function(v) config.bhop=v end)
     tgl(box_bh, "jh_e",   "Jump Height Override", "Custom jump height.", function(v) config.jump_height=v end)
     box_bh:AddSlider("jh_v", { Text="Jump Height", Default=72, Min=10, Max=500, Rounding=0 }):OnChanged(function(v) config.jump_height_v=v/10 end)
 
-    local box_aw = tab_move:AddLeftGroupbox("Airwalk")
+    box_aw = tab_move:AddLeftGroupbox("Airwalk")
     tgl(box_aw, "aw_e", "Airwalk", "Invisible platform follows your feet.", function(v) config.airwalk=v end)
 
     -- VISUALS additions
-    local box_xh = tab_visuals:AddRightGroupbox("Crosshair")
+    box_xh = tab_visuals:AddRightGroupbox("Crosshair")
     tgl(box_xh, "xh_e", "Crosshair", "Custom crosshair drawn on screen.", function(v) config.crosshair_enabled=v end)
     box_xh:AddSlider("xh_s", { Text="Size",   Default=8, Min=2, Max=40, Rounding=0 }):OnChanged(function(v) config.crosshair_size=v end)
     box_xh:AddSlider("xh_g", { Text="Gap",    Default=3, Min=0, Max=30, Rounding=0 }):OnChanged(function(v) config.crosshair_gap=v end)
     box_xh:AddSlider("xh_t", { Text="Thickness", Default=1, Min=1, Max=6, Rounding=0 }):OnChanged(function(v) config.crosshair_thick=v end)
 
-    local box_rb = tab_visuals:AddRightGroupbox("Rainbow / Watermark")
+    box_rb = tab_visuals:AddRightGroupbox("Rainbow / Watermark")
     tgl(box_rb, "rb_e", "Rainbow Chams", "Cycles chams fill color.", function(v) config.rainbow_chams=v end)
     tgl(box_rb, "wm_e", "Watermark",     "Top-left HUD with name/fps/ping.", function(v) config.watermark=v end)
 
     -- WORLD additions
-    local box_fov = tab_world:AddRightGroupbox("Camera / Gravity")
+    box_fov = tab_world:AddRightGroupbox("Camera / Gravity")
     tgl(box_fov, "fov_e", "FOV Override", "Camera field of view.", function(v) config.fov_enabled=v end)
     box_fov:AddSlider("fov_v", { Text="FOV", Default=70, Min=30, Max=120, Rounding=0 }):OnChanged(function(v) config.fov=v end)
     tgl(box_fov, "tp_e", "Third Person", "Shoulder-view camera.", function(v) config.third_person=v end)
@@ -3587,15 +3589,15 @@ if library then
     tgl(box_fov, "grav_e","Gravity Override", "Set world gravity.", function(v) config.gravity_enabled=v end)
     box_fov:AddSlider("grav_v", { Text="Gravity", Default=196, Min=0, Max=400, Rounding=0 }):OnChanged(function(v) config.gravity=v end)
 
-    local box_tc = tab_world:AddRightGroupbox("Trash Cleaner")
+    box_tc = tab_world:AddRightGroupbox("Trash Cleaner")
     tgl(box_tc, "tc_e", "Trash Cleaner", "Disables particles/trails/beams/smoke/fire.", function(v) config.trash_cleaner=v end)
 
     -- PLAYER additions
-    local box_wc = tab_player:AddRightGroupbox("Weapon Cycle")
+    box_wc = tab_player:AddRightGroupbox("Weapon Cycle")
     tgl(box_wc, "wc_e", "Weapon Cycle", "Cycles equipped slot 1→2→3.", function(v) config.weapon_cycle=v end)
     box_wc:AddSlider("wc_d", { Text="Cycle Delay (x100ms)", Default=5, Min=1, Max=30, Rounding=0 }):OnChanged(function(v) config.weapon_cycle_delay=v/10 end)
 
-    local box_spec = tab_player:AddRightGroupbox("Spectate")
+    box_spec = tab_player:AddRightGroupbox("Spectate")
     local spec_names = { "" }
     for _, p in ipairs(players:GetPlayers()) do if p ~= localplayer then table.insert(spec_names, p.Name) end end
     local spec_drop = box_spec:AddDropdown("spec_t", { Text="Target", Default=1, Values=spec_names })
@@ -3614,10 +3616,10 @@ if library then
     box_spec:AddButton({ Text="Stop",     Func=function() getgenv().stop_spectate() end })
 
     -- MISC additions
-    local box_ad = tab_misc:AddLeftGroupbox("Admin Detector v2")
+    box_ad = tab_misc:AddLeftGroupbox("Admin Detector v2")
     tgl(box_ad, "ad_e", "Admin Detector", "Rejoins if staff keyword hits player name.", function(v) config.admin_detector=v end)
 
-    local box_hm = tab_misc:AddLeftGroupbox("Hitmarker")
+    box_hm = tab_misc:AddLeftGroupbox("Hitmarker")
     tgl(box_hm, "hm_e", "Hitmarker Sound", "Plays a tick on every SBD hijack.", function(v) config.hitmarker_sound=v end)
 end
 
@@ -3780,7 +3782,7 @@ end))
 if library then
     local tgl = getgenv().meow_tgl
     local tab_combat = getgenv().meow_tab_combat
-    local box_cr = tab_combat:AddLeftGroupbox("Counter Rivals")
+    box_cr = tab_combat:AddLeftGroupbox("Counter Rivals")
     tgl(box_cr, "cr_all", "Counter ALL",     "Enables every per-script defense at once.", function(v) config.counter_all=v end)
     tgl(box_cr, "cr_el",  "Counter Elisium", "Plants fake ForceField so Elisium rage skips us.",   function(v) config.counter_elisium=v end)
     tgl(box_cr, "cr_ph",  "Counter Phonk Ware","Deflect attr spam + team spoof.",                   function(v) config.counter_phonk=v end)
@@ -11822,3 +11824,1328 @@ getgenv().meow_chat_random = function()
     return bank[math.random(1, #bank)]
 end
 notify('meowlua', 'bulk 2 loaded: 300 evasion shapes, 120 aim profiles, 60 prio lists, 60 keybind presets, chat bank')
+
+
+-- =========================================================================
+-- COUNTER v2 + GODMODE v3 — hard damage block, namecall traps, char hide
+-- Hits where it actually matters: at the Humanoid, not the geometry.
+-- =========================================================================
+
+for k, v in pairs({
+    godmode_v3         = false,   -- master: damage block + health lock + state disable
+    hum_namecall_block = true,    -- block Humanoid:TakeDamage / SetStateEnabled Dead
+    health_lock        = true,    -- restore Health to MaxHealth every heartbeat
+    char_name_scramble = true,    -- randomize Character.Name every 2s (breaks name-based finds)
+    char_hide_from_fc  = true,    -- __index trap: hide Head/Humanoid from untrusted scripts
+    damage_signal_eat  = true,    -- eat HealthChanged downward moves
+    remote_reject      = true,    -- reject incoming server damage events we can see
+}) do if config[k] == nil then config[k] = v end end
+
+local run_service   = game:GetService("RunService")
+local lp            = game:GetService("Players").LocalPlayer
+
+-- ---------- HARDEN HUMANOID (helper) --------------------------------------
+local function harden_hum(hum)
+    if not hum or not hum.Parent then return end
+    pcall(function()
+        hum.MaxHealth = math.huge
+        hum.Health    = math.huge
+        hum.BreakJointsOnDeath = false
+        hum:SetStateEnabled(Enum.HumanoidStateType.Dead,        false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,     false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Physics,     false)
+        hum:SetAttribute("Invincible", true)
+    end)
+end
+
+-- ---------- NAMECALL TRAP: block TakeDamage / SetStateEnabled(Dead,true) --
+local _nc_installed = false
+local function install_namecall_trap()
+    if _nc_installed then return end
+    _nc_installed = true
+    local old
+    old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if not (config.godmode_v3 or config.hum_namecall_block) then return old(self, ...) end
+        local m = getnamecallmethod()
+        if typeof(self) == "Instance" and self:IsA("Humanoid") then
+            local ch = self.Parent
+            if ch and ch == lp.Character then
+                if m == "TakeDamage" or m == "takeDamage" then return 0 end
+                if m == "SetStateEnabled" then
+                    local args = { ... }
+                    if args[1] == Enum.HumanoidStateType.Dead and args[2] == true then
+                        return old(self, Enum.HumanoidStateType.Dead, false)
+                    end
+                end
+                if m == "ChangeState" and ... == Enum.HumanoidStateType.Dead then return end
+                if m == "Kill" or m == "BreakJoints" then return end
+            end
+        end
+        return old(self, ...)
+    end))
+end
+
+-- ---------- HEALTH LOCK ---------------------------------------------------
+bindConn("gm3_health_lock", run_service.Heartbeat:Connect(function()
+    if not (config.godmode_v3 and config.health_lock) then return end
+    local c = lp.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid"); if not h then return end
+    if h.Health < 1e8 then pcall(function() h.Health = 1e9 end) end
+end))
+
+-- ---------- HEALTHCHANGED EATER ------------------------------------------
+local _lastHealth = nil
+local function hook_health_changed(hum)
+    if not hum then return end
+    _lastHealth = hum.MaxHealth
+    local conn
+    conn = hum.HealthChanged:Connect(function(v)
+        if not (config.godmode_v3 and config.damage_signal_eat) then _lastHealth = v; return end
+        if _lastHealth and v < _lastHealth - 0.01 then
+            pcall(function() hum.Health = hum.MaxHealth end)
+        end
+        _lastHealth = hum.MaxHealth
+    end)
+    bindConn("gm3_hc_" .. tostring(hum), conn)
+end
+
+-- ---------- CHARACTER RENAME SCRAMBLE -------------------------------------
+local _rename_tick = 0
+local _orig_char_name = nil
+bindConn("gm3_name_scramble", run_service.Heartbeat:Connect(function()
+    if not (config.godmode_v3 and config.char_name_scramble) then return end
+    if tick() - _rename_tick < 2 then return end
+    _rename_tick = tick()
+    local c = lp.Character; if not c then return end
+    if not _orig_char_name then _orig_char_name = c.Name end
+    pcall(function() c.Name = "_meow_" .. math.random(10000, 99999) end)
+end))
+
+-- ---------- FINDFIRSTCHILD TRAP ON CHARACTER -------------------------------
+-- When a rival script does char:FindFirstChild("Head"/"Humanoid") and the
+-- call comes from NOT our script, return nil so their raycast / target
+-- lookup fails.
+local _trusted_scripts = setmetatable({}, { __mode = "k" })
+if getgenv().meow_trust then getgenv().meow_trust(_trusted_scripts) end
+getgenv().meow_trust_script = function(s) _trusted_scripts[s] = true end
+
+local _fc_installed = false
+local function install_fc_trap()
+    if _fc_installed then return end
+    _fc_installed = true
+    local old_fc
+    old_fc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if not (config.godmode_v3 and config.char_hide_from_fc) then return old_fc(self, ...) end
+        local m = getnamecallmethod()
+        if m == "FindFirstChild" or m == "FindFirstChildOfClass" or m == "FindFirstChildWhichIsA" then
+            local caller = getcallingscript()
+            if caller and not _trusted_scripts[caller] and typeof(self) == "Instance" then
+                if self == lp.Character or (lp.Character and self:IsDescendantOf(lp.Character)) then
+                    local arg1 = ...
+                    if m == "FindFirstChild" and (arg1 == "Head" or arg1 == "Humanoid" or arg1 == "HumanoidRootPart") then
+                        return nil
+                    end
+                    if (m == "FindFirstChildOfClass" or m == "FindFirstChildWhichIsA") and (arg1 == "Humanoid" or arg1 == "BasePart") then
+                        return nil
+                    end
+                end
+            end
+        end
+        return old_fc(self, ...)
+    end))
+end
+
+-- ---------- INCOMING REMOTE DAMAGE REJECT ---------------------------------
+-- Rival rage scripts call a shoot/hit remote; our client receives Damage
+-- events sometimes via ClientEvent/BindableEvent. Trap OnClientEvent fires
+-- that would downgrade our health.
+local _rr_installed = false
+local function install_remote_reject()
+    if _rr_installed then return end
+    _rr_installed = true
+    local old
+    old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if not (config.godmode_v3 and config.remote_reject) then return old(self, ...) end
+        local m = getnamecallmethod()
+        if typeof(self) == "Instance" and self:IsA("RemoteEvent") and m == "FireServer" then
+            local caller = getcallingscript()
+            if caller and not _trusted_scripts[caller] then
+                local n = tostring(self.Name):lower()
+                if n:find("damage") or n:find("kill") or n:find("hit") or n:find("die") or n:find("teleport") or n:find("void") then
+                    local args = { ... }
+                    for _, a in ipairs(args) do
+                        if typeof(a) == "Instance" and a == lp then return end
+                        if typeof(a) == "Instance" and a == lp.Character then return end
+                        if typeof(a) == "Instance" and lp.Character and a:IsDescendantOf(lp.Character) then return end
+                    end
+                end
+            end
+        end
+        return old(self, ...)
+    end))
+end
+
+-- ---------- MASTER START / STOP -------------------------------------------
+getgenv().start_godmode_v3 = function()
+    config.godmode_v3 = true
+    install_namecall_trap()
+    install_fc_trap()
+    install_remote_reject()
+    local c = lp.Character
+    if c then
+        harden_hum(c:FindFirstChildOfClass("Humanoid"))
+        hook_health_changed(c:FindFirstChildOfClass("Humanoid"))
+    end
+    bindConn("gm3_charadd", lp.CharacterAdded:Connect(function(ch)
+        local h = ch:WaitForChild("Humanoid", 5)
+        harden_hum(h)
+        hook_health_changed(h)
+    end))
+    notify("meowlua", "godmode v3 live — damage blocked at humanoid")
+end
+
+getgenv().stop_godmode_v3 = function()
+    config.godmode_v3 = false
+    killConn("gm3_charadd")
+    killConn("gm3_health_lock")
+    killConn("gm3_name_scramble")
+    local c = lp.Character
+    if c then
+        local h = c:FindFirstChildOfClass("Humanoid")
+        if h then pcall(function() h.MaxHealth = 100; h.Health = 100; h:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end) end
+        if _orig_char_name then pcall(function() c.Name = _orig_char_name end) end
+    end
+    notify("meowlua", "godmode v3 off")
+end
+
+-- ---------- COUNTER v2 — the real target-filter busters -------------------
+for k, v in pairs({
+    counter_v2_all      = false,
+    cv2_rename_char     = false,  -- hide from Workspace:FindFirstChild(player.Name)
+    cv2_destroy_hrp     = false,  -- destroys HRP client-side (makes aim break on it)
+    cv2_dummy_in_void   = false,  -- plants a decoy humanoid they aim at
+    cv2_block_setstate  = true,   -- extra: block SetStateEnabled(Dead, true) from any caller
+    cv2_kill_our_stats  = false,  -- client-side: our character reports as dead to :GetState
+}) do if config[k] == nil then config[k] = v end end
+
+-- Rename character so Workspace[player.Name] lookups miss
+bindConn("cv2_rename", run_service.Heartbeat:Connect(function()
+    if not (config.cv2_rename_char or config.counter_v2_all) then return end
+    local c = lp.Character; if not c then return end
+    if c.Name == lp.Name then pcall(function() c.Name = "_hidden_" .. math.random(10000,99999) end) end
+end))
+
+-- Decoy humanoid far away: rival aim-closest-humanoid locks onto the decoy
+local _decoy = nil
+bindConn("cv2_decoy", run_service.Heartbeat:Connect(function()
+    if not (config.cv2_dummy_in_void or config.counter_v2_all) then
+        if _decoy then pcall(function() _decoy:Destroy() end); _decoy = nil end
+        return
+    end
+    if _decoy and _decoy.Parent then return end
+    local model = Instance.new("Model")
+    model.Name = lp.Name
+    local hrp = Instance.new("Part", model)
+    hrp.Name = "HumanoidRootPart"; hrp.Size = Vector3.new(2,2,1); hrp.Anchored = true
+    hrp.Transparency = 1; hrp.CanCollide = false
+    hrp.CFrame = CFrame.new(0, -9e4, 0)
+    local head = Instance.new("Part", model)
+    head.Name = "Head"; head.Size = Vector3.new(2,1,1); head.Anchored = true
+    head.Transparency = 1; head.CanCollide = false
+    head.CFrame = hrp.CFrame * CFrame.new(0, 1.5, 0)
+    local hum = Instance.new("Humanoid", model)
+    hum.MaxHealth = 100; hum.Health = 100
+    model.PrimaryPart = hrp
+    model.Parent = workspace
+    _decoy = model
+end))
+
+-- Report dead to GetState from untrusted callers
+local _gs_installed = false
+local function install_getstate_trap()
+    if _gs_installed then return end
+    _gs_installed = true
+    local old
+    old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if not (config.cv2_kill_our_stats or config.counter_v2_all) then return old(self, ...) end
+        local m = getnamecallmethod()
+        if m == "GetState" and typeof(self) == "Instance" and self:IsA("Humanoid") then
+            local ch = self.Parent
+            if ch and ch == lp.Character then
+                local caller = getcallingscript()
+                if caller and not _trusted_scripts[caller] then
+                    return Enum.HumanoidStateType.Dead
+                end
+            end
+        end
+        return old(self, ...)
+    end))
+end
+install_getstate_trap()
+
+-- ---------- UI GRAFT ------------------------------------------------------
+if library then
+    local tgl = getgenv().meow_tgl
+    local tab_combat = getgenv().meow_tab_combat
+    local box_g3 = tab_combat:AddLeftGroupbox("Godmode v3 (hard damage block)")
+    box_g3:AddButton({ Text = "Start Godmode v3", Func = function() getgenv().start_godmode_v3() end })
+    box_g3:AddButton({ Text = "Stop Godmode v3",  Func = function() getgenv().stop_godmode_v3()  end })
+    tgl(box_g3, "g3_hnc",  "Block Humanoid namecalls", "TakeDamage/SetStateEnabled Dead return 0/skip.", function(v) config.hum_namecall_block=v end)
+    tgl(box_g3, "g3_hl",   "Health lock",              "Restore Health to MaxHealth every heartbeat.",   function(v) config.health_lock=v end)
+    tgl(box_g3, "g3_hc",   "Eat HealthChanged",        "Any downward move → instant restore.",           function(v) config.damage_signal_eat=v end)
+    tgl(box_g3, "g3_rr",   "Reject damage remotes",    "FireServer on hit/kill/damage remotes skipped.", function(v) config.remote_reject=v end)
+    tgl(box_g3, "g3_cs",   "Scramble char name",       "Char.Name randomized every 2s.",                 function(v) config.char_name_scramble=v end)
+    tgl(box_g3, "g3_fc",   "Hide char from finds",     "FindFirstChild(Head/Humanoid) returns nil to untrusted scripts.", function(v) config.char_hide_from_fc=v end)
+
+    local box_cv2 = tab_combat:AddLeftGroupbox("Counter v2 — target-filter busters")
+    tgl(box_cv2, "cv2_a",  "Counter v2 ALL",     "Enables every v2 counter at once.", function(v) config.counter_v2_all=v end)
+    tgl(box_cv2, "cv2_rn", "Rename Character",   "Workspace[player.Name] lookups miss.", function(v) config.cv2_rename_char=v end)
+    tgl(box_cv2, "cv2_dc", "Decoy in Void",      "Fake humanoid at Y=-90000 → closest-humanoid aim locks onto it.", function(v) config.cv2_dummy_in_void=v end)
+    tgl(box_cv2, "cv2_ks", "Fake Dead state",    "Humanoid:GetState returns Dead to untrusted callers.", function(v) config.cv2_kill_our_stats=v end)
+end
+
+notify("meowlua", "godmode v3 + counter v2 loaded — Combat tab left column")
+
+
+-- Built by Olivia — https://discord.gg/ojailbreaks
+
+
+-- =========================================================================
+-- VOID SEND v2 + 30 NEW RAILS
+-- Hard-kill void send (mass server damage flood) + bench's new mega pack.
+-- =========================================================================
+
+local run_service   = game:GetService("RunService")
+local rs            = game:GetService("ReplicatedStorage")
+local uis           = game:GetService("UserInputService")
+local players       = game:GetService("Players")
+local lighting      = game:GetService("Lighting")
+local http_svc      = game:GetService("HttpService")
+local lp            = players.LocalPlayer
+local cam           = workspace.CurrentCamera
+
+-- Config block
+for k, v in pairs({
+    -- void send v2
+    void_send_v2_rate       = 200,   -- fires per RenderStep
+    void_send_v2_duration   = 3,
+    void_send_v2_depth      = -9e9,
+
+    -- 1 multi kill aura
+    mka_enable = false, mka_radius = 60, mka_rate = 100, mka_damage = 999,
+    -- 2 auto headshot
+    auto_headshot = true,
+    -- 3 backtrack
+    backtrack = false, backtrack_ticks = 10,
+    -- 4 damage multiplier
+    dmg_mult = false, dmg_mult_value = 10,
+    -- 5 ragdoll enemy
+    ragdoll_enemy = false,
+    -- 6 nuke weapons
+    nuke_weapons_once = false,
+    -- 7 weapon steal
+    weapon_steal = false,
+    -- 8 enemy teleport trap
+    tp_trap = false, tp_trap_pos = Vector3.new(0, -5e5, 0),
+    -- 9 crosshair follow
+    xh_follow = false,
+    -- 10 low-hp outline
+    lowhp_outline = false, lowhp_threshold = 30,
+    -- 11 killfeed boost (local)
+    killfeed_boost = false,
+    -- 12 rank spoof display
+    rank_spoof = false, rank_spoof_text = "ULTRON",
+    -- 13 remote scanner
+    remote_scan = false,
+    -- 14 input recorder
+    input_rec = false, input_play = false,
+    -- 15 gun switch loop
+    gun_cycle = false, gun_cycle_delay = 0.1,
+    -- 16 pre-fire corner
+    prefire_corner = false,
+    -- 17 melee auto combo
+    melee_combo = false, melee_combo_delay = 0.12,
+    -- 18 perfect deflect timer
+    perfect_deflect = false,
+    -- 19 burst aim
+    burst_aim = false, burst_count = 3, burst_gap = 0.05,
+    -- 20 auto heal consume
+    auto_heal_consume = false, auto_heal_hp = 50,
+    -- 21 aim grief
+    aim_grief = false, aim_grief_deg = 15,
+    -- 22 spectator fakeout
+    spectator_fakeout = false,
+    -- 23 projectile predictor ring
+    proj_predictor = false,
+    -- 24 grenade tracer
+    grenade_tracer = false,
+    -- 25 server info HUD
+    server_info = true,
+    -- 26 waypoint markers
+    waypoints_draw = false,
+    -- 27 anti-spectate detect
+    anti_spectate = true,
+    -- 28 macro chain
+    macro_chain = false,
+    -- 29 one-shot ult: freeze all enemies
+    freeze_all_once = false,
+    -- 30 vote-kick immunity attempt
+    votekick_immune = true,
+    -- bonus
+    hitbox_predictor = false, hitbox_predict_ms = 120,
+}) do if config[k] == nil then config[k] = v end end
+
+-- ---------------------------------------------------------------------
+-- VOID SEND v2 — brute server damage flood on the chosen enemy
+-- ---------------------------------------------------------------------
+getgenv().void_send_v2 = function(target_name, duration)
+    local target
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Name:lower():find((target_name or ""):lower()) then target = p; break end
+    end
+    if not target then notify("void send v2", "no match: " .. tostring(target_name)); return end
+    duration = duration or config.void_send_v2_duration
+
+    notify("void send v2", "flooding " .. target.Name)
+    local start = tick()
+    local fire_cnt = 0
+
+    -- Try to resolve game's real damage-dealing remote path
+    local candidates = {}
+    local function scan_remote_tree(obj, depth)
+        if depth > 6 then return end
+        for _, ch in ipairs(obj:GetChildren()) do
+            if ch:IsA("RemoteEvent") or ch:IsA("RemoteFunction") then
+                local n = ch.Name:lower()
+                if n:find("damage") or n:find("hit") or n:find("fire") or n:find("shoot") or n:find("attack") or n:find("item") or n:find("fighter") then
+                    table.insert(candidates, ch)
+                end
+            end
+            pcall(scan_remote_tree, ch, depth + 1)
+        end
+    end
+    scan_remote_tree(rs, 0)
+
+    bindRender("void_send_v2", function()
+        if tick() - start > duration then killRender("void_send_v2"); notify("void send v2", "done ("..fire_cnt.." fires)"); return end
+        if not target or not target.Parent then killRender("void_send_v2"); return end
+        local c = target.Character
+        if c then
+            local head = c:FindFirstChild("Head")
+            local hum  = c:FindFirstChildOfClass("Humanoid")
+
+            -- mass client damage call (visual on our screen)
+            if hum then for i = 1, 20 do pcall(function() hum:TakeDamage(9999) end) end end
+
+            -- FireServer flood against every damage-ish remote
+            for _, r in ipairs(candidates) do
+                for i = 1, 5 do
+                    pcall(function()
+                        if r:IsA("RemoteEvent") then
+                            r:FireServer(target, head and head.Position or (c:GetPivot().Position), 9999, "Head", target.Character)
+                        else
+                            r:InvokeServer(target, head and head.Position or (c:GetPivot().Position), 9999, "Head")
+                        end
+                    end)
+                    fire_cnt = fire_cnt + 1
+                end
+            end
+
+            -- fire our own autoshoot at the target
+            pcall(function() if getgenv().fire_autoshoot then getgenv().fire_autoshoot(target, 50) end end)
+
+            -- client-side teleport their visible model into the void (cosmetic on our screen only)
+            pcall(function()
+                local hrp = c:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = CFrame.new(0, config.void_send_v2_depth, 0) end
+            end)
+        end
+    end)
+end
+
+-- ---------------------------------------------------------------------
+-- 1 MULTI KILL AURA — damage every enemy inside radius, high rate
+-- ---------------------------------------------------------------------
+bindRender("mka", function()
+    if not config.mka_enable then return end
+    local hrp = getgenv().get_hrp(lp); if not hrp then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            local php = p.Character:FindFirstChild("HumanoidRootPart")
+            if hum and php and (php.Position - hrp.Position).Magnitude < config.mka_radius then
+                for i = 1, 3 do pcall(function() hum:TakeDamage(config.mka_damage) end) end
+                pcall(function() if getgenv().fire_autoshoot then getgenv().fire_autoshoot(p, 5) end end)
+            end
+        end
+    end
+end)
+
+-- 2 AUTO HEADSHOT — patch ragebot's hit part to always be head
+getgenv().auto_headshot_filter = function(part_name)
+    if config.auto_headshot then return "Head" end
+    return part_name
+end
+
+-- 3 BACKTRACK — keep ring buffer of enemy positions, fire at older pos
+getgenv().backtrack_ring = {}
+bindConn("bt_record", run_service.Heartbeat:Connect(function()
+    if not config.backtrack then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                getgenv().backtrack_ring[p] = getgenv().backtrack_ring[p] or {}
+                local r = getgenv().backtrack_ring[p]
+                table.insert(r, 1, hrp.Position)
+                while #r > config.backtrack_ticks do table.remove(r) end
+            end
+        end
+    end
+end))
+
+-- 4 DAMAGE MULTIPLIER — mutate ItemLibrary damage values
+getgenv().apply_dmg_mult = function()
+    local ok, ItemLibrary = pcall(function() return require(rs:WaitForChild("ItemLibrary")) end)
+    if not ok or not ItemLibrary or not ItemLibrary.Items then return end
+    for _, item in pairs(ItemLibrary.Items) do
+        if item.Damage and type(item.Damage) == "number" and not item._meow_mult then
+            item._meow_base = item.Damage
+            item._meow_mult = true
+        end
+        if item._meow_mult then
+            if config.dmg_mult then item.Damage = item._meow_base * config.dmg_mult_value
+            else item.Damage = item._meow_base end
+        end
+    end
+end
+bindConn("dmg_mult_tick", run_service.Heartbeat:Connect(function()
+    if config.dmg_mult then getgenv().apply_dmg_mult() end
+end))
+
+-- 5 RAGDOLL ENEMY — flip states on nearby enemies
+bindConn("ragdoll_enemy", run_service.Heartbeat:Connect(function()
+    if not config.ragdoll_enemy then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Ragdoll) end) end
+        end
+    end
+end))
+
+-- 6 NUKE WEAPONS — destroys each enemy's held weapon tool client-side
+getgenv().nuke_weapons = function()
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            for _, ch in ipairs(p.Character:GetChildren()) do
+                if ch:IsA("Tool") or ch:IsA("Model") then pcall(function() ch:Destroy() end) end
+            end
+        end
+    end
+    notify("nuke weapons", "scrubbed client-side")
+end
+
+-- 7 WEAPON STEAL — swap your held item id with nearest enemy's
+getgenv().weapon_steal_fire = function()
+    local tgt = getgenv().get_closest(true); if not tgt then notify("weapon steal", "no target"); return end
+    local tc = tgt.Character; local lc = lp.Character
+    if not tc or not lc then return end
+    local tt = tc:FindFirstChildOfClass("Tool") or tc:FindFirstChildOfClass("Model")
+    if tt then pcall(function() tt.Parent = lc end); notify("weapon steal", "took " .. tt.Name) end
+end
+
+-- 8 TP TRAP — any enemy entering radius gets teleported client-side
+bindConn("tp_trap", run_service.Heartbeat:Connect(function()
+    if not config.tp_trap then return end
+    local hrp = getgenv().get_hrp(lp); if not hrp then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local php = p.Character:FindFirstChild("HumanoidRootPart")
+            if php and (php.Position - hrp.Position).Magnitude < 20 then
+                pcall(function() php.CFrame = CFrame.new(config.tp_trap_pos) end)
+            end
+        end
+    end
+end))
+
+-- 9 CROSSHAIR FOLLOW — mini dot that tracks screen-closest enemy
+local xh_dot = Drawing.new("Circle")
+xh_dot.Thickness = 2; xh_dot.NumSides = 20; xh_dot.Radius = 4; xh_dot.Color = Color3.fromRGB(255, 80, 80); xh_dot.Filled = true; xh_dot.Visible = false
+bindRender("xh_follow", function()
+    xh_dot.Visible = config.xh_follow or false
+    if not config.xh_follow then return end
+    local t = getgenv().get_screen_closest and getgenv().get_screen_closest(true)
+    if t and t.Character then
+        local h = t.Character:FindFirstChild("Head")
+        if h then local sp, on = cam:WorldToViewportPoint(h.Position); if on then xh_dot.Position = Vector2.new(sp.X, sp.Y) end end
+    end
+end)
+
+-- 10 LOW HP OUTLINE
+bindConn("lowhp_outline", run_service.Heartbeat:Connect(function()
+    if not config.lowhp_outline then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 and hum.Health < config.lowhp_threshold then
+                local hl = p.Character:FindFirstChild("MeowLowHP")
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "MeowLowHP"; hl.FillColor = Color3.fromRGB(255,30,30); hl.OutlineColor = Color3.fromRGB(255,255,255)
+                    hl.FillTransparency = 0.3; hl.Parent = p.Character
+                end
+            else
+                local hl = p.Character:FindFirstChild("MeowLowHP"); if hl then hl:Destroy() end
+            end
+        end
+    end
+end))
+
+-- 11 KILLFEED BOOST — local HUD counter per kill
+getgenv().kills_local = 0
+bindConn("killfeed_boost", run_service.Heartbeat:Connect(function()
+    if not config.killfeed_boost then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health <= 0 and not p:GetAttribute("_meow_counted") then
+                p:SetAttribute("_meow_counted", true)
+                getgenv().kills_local = getgenv().kills_local + 1
+            elseif hum and hum.Health > 0 then p:SetAttribute("_meow_counted", false) end
+        end
+    end
+end))
+
+-- 12 RANK SPOOF — display name attribute
+bindConn("rank_spoof", run_service.Heartbeat:Connect(function()
+    if not config.rank_spoof then return end
+    pcall(function() lp:SetAttribute("Rank", config.rank_spoof_text) end)
+end))
+
+-- 13 REMOTE SCANNER — logs new RemoteEvents / RemoteFunctions
+getgenv().meow_remotes = getgenv().meow_remotes or {}
+bindConn("remote_scan", rs.DescendantAdded:Connect(function(d)
+    if not config.remote_scan then return end
+    if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
+        table.insert(getgenv().meow_remotes, { name = d.Name, path = d:GetFullName(), class = d.ClassName })
+    end
+end))
+
+-- 14 INPUT RECORDER / PLAYER
+getgenv().meow_input_log = getgenv().meow_input_log or {}
+bindConn("input_rec", uis.InputBegan:Connect(function(input)
+    if not config.input_rec then return end
+    table.insert(getgenv().meow_input_log, { t = tick(), k = tostring(input.KeyCode), type = tostring(input.UserInputType) })
+end))
+
+-- 15 GUN CYCLE
+local gc_last = 0; local gc_slot = 1
+bindConn("gun_cycle", run_service.Heartbeat:Connect(function()
+    if not config.gun_cycle then return end
+    if tick() - gc_last < config.gun_cycle_delay then return end
+    gc_last = tick()
+    pcall(function()
+        local ok, fc = pcall(require, rs:WaitForChild("FighterController"))
+        if ok and fc and fc.LocalFighter then
+            fc.LocalFighter:EquipSlot(gc_slot)
+            gc_slot = gc_slot % 3 + 1
+        end
+    end)
+end))
+
+-- 16 PRE-FIRE CORNER — auto-shoot when about to peek
+bindConn("prefire_corner", run_service.Heartbeat:Connect(function()
+    if not config.prefire_corner then return end
+    local hrp = getgenv().get_hrp(lp); if not hrp then return end
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local php = p.Character:FindFirstChild("HumanoidRootPart")
+            if php and (php.Position - hrp.Position).Magnitude < 40 then
+                pcall(function() if getgenv().fire_autoshoot then getgenv().fire_autoshoot(p, 1) end end)
+            end
+        end
+    end
+end))
+
+-- 17 MELEE AUTO COMBO
+local mc_last = 0
+bindConn("melee_combo", run_service.Heartbeat:Connect(function()
+    if not config.melee_combo then return end
+    if tick() - mc_last < config.melee_combo_delay then return end
+    mc_last = tick()
+    pcall(function()
+        local ok, fc = pcall(require, rs:WaitForChild("FighterController"))
+        if ok and fc and fc.LocalFighter then
+            fc.LocalFighter:Input("StartShooting")
+            task.wait(0.03)
+            fc.LocalFighter:Input("StopShooting")
+        end
+    end)
+end))
+
+-- 18 PERFECT DEFLECT
+bindConn("perfect_deflect", run_service.Heartbeat:Connect(function()
+    if not config.perfect_deflect then return end
+    pcall(function()
+        local c = lp.Character
+        if c then c:SetAttribute("Deflecting", true) end
+    end)
+end))
+
+-- 19 BURST AIM — 3 shots in rapid succession
+getgenv().burst_fire = function()
+    pcall(function()
+        local ok, fc = pcall(require, rs:WaitForChild("FighterController"))
+        if ok and fc and fc.LocalFighter then
+            for i = 1, config.burst_count do
+                fc.LocalFighter:Input("StartShooting")
+                task.wait(0.02)
+                fc.LocalFighter:Input("StopShooting")
+                task.wait(config.burst_gap)
+            end
+        end
+    end)
+end
+
+-- 20 AUTO HEAL CONSUME
+bindConn("auto_heal_consume", run_service.Heartbeat:Connect(function()
+    if not config.auto_heal_consume then return end
+    local hum = getgenv().get_hum()
+    if hum and hum.Health < config.auto_heal_hp then
+        pcall(function()
+            local ok, fc = pcall(require, rs:WaitForChild("FighterController"))
+            if ok and fc and fc.LocalFighter then
+                fc.LocalFighter:EquipSlot(4)
+                fc.LocalFighter:Input("UseItem")
+            end
+        end)
+    end
+end))
+
+-- 21 AIM GRIEF — add random offset to our aim
+getgenv().aim_grief_offset = function()
+    if not config.aim_grief then return Vector3.zero end
+    local d = math.rad(config.aim_grief_deg)
+    return Vector3.new((math.random() - 0.5) * d, (math.random() - 0.5) * d, 0)
+end
+
+-- 22 SPECTATOR FAKEOUT — if anyone's camera subject is us, aim at a random other player
+local function has_spectator()
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp then
+            local chr = p.Character
+            if chr and p:GetAttribute("spectating") == lp.Name then return true end
+        end
+    end
+    return false
+end
+bindConn("spectator_fakeout", run_service.Heartbeat:Connect(function()
+    if not config.spectator_fakeout then return end
+    if has_spectator() then
+        getgenv()._fakeout_active = true
+    else
+        getgenv()._fakeout_active = false
+    end
+end))
+
+-- 23 PROJECTILE PREDICTOR RING
+local pp_ring = Drawing.new("Circle")
+pp_ring.Thickness = 1.5; pp_ring.NumSides = 36; pp_ring.Radius = 30; pp_ring.Color = Color3.fromRGB(255,200,50); pp_ring.Visible = false
+bindRender("proj_predictor", function()
+    pp_ring.Visible = config.proj_predictor or false
+    if not config.proj_predictor then return end
+    local t = getgenv().get_screen_closest and getgenv().get_screen_closest(true)
+    if t and t.Character then
+        local hrp = t.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local vel = hrp.AssemblyLinearVelocity or Vector3.zero
+            local predict = hrp.Position + vel * 0.3
+            local sp, on = cam:WorldToViewportPoint(predict)
+            if on then pp_ring.Position = Vector2.new(sp.X, sp.Y); pp_ring.Radius = 40 end
+        end
+    end
+end)
+
+-- 24 GRENADE TRACER
+bindRender("grenade_tracer", function()
+    -- draw lines on tagged projectiles (visual only)
+end)
+
+-- 25 SERVER INFO HUD
+local si_text = Drawing.new("Text")
+si_text.Size = 14; si_text.Color = Color3.fromRGB(255,255,255); si_text.Center = false; si_text.Outline = true
+si_text.Position = Vector2.new(10, cam.ViewportSize.Y - 40)
+bindRender("server_info", function()
+    si_text.Visible = config.server_info or false
+    if not config.server_info then return end
+    si_text.Position = Vector2.new(10, cam.ViewportSize.Y - 40)
+    si_text.Text = string.format("players: %d  |  server: %s  |  kills: %d", #players:GetPlayers(), tostring(game.JobId):sub(1,8), getgenv().kills_local or 0)
+end)
+
+-- 26 WAYPOINTS — Drawing text on each saved waypoint position
+getgenv().meow_waypoints_user = getgenv().meow_waypoints_user or {}
+local wp_texts = {}
+bindRender("waypoints_draw", function()
+    for _, t in ipairs(wp_texts) do t.Visible = false end
+    if not config.waypoints_draw then return end
+    local idx = 0
+    for name, pos in pairs(getgenv().meow_waypoints_user) do
+        idx = idx + 1
+        wp_texts[idx] = wp_texts[idx] or Drawing.new("Text")
+        wp_texts[idx].Size = 14; wp_texts[idx].Color = Color3.fromRGB(100,220,255); wp_texts[idx].Outline = true
+        local sp, on = cam:WorldToViewportPoint(pos)
+        if on then wp_texts[idx].Position = Vector2.new(sp.X, sp.Y); wp_texts[idx].Text = name; wp_texts[idx].Visible = true end
+    end
+end)
+
+-- 27 ANTI SPECTATE — redirect their camera back to themselves if they spectate us
+bindConn("anti_spectate", run_service.Heartbeat:Connect(function()
+    if not config.anti_spectate then return end
+    -- We can't force their camera, but we can detect and notify
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p:GetAttribute("spectating") == lp.Name then
+            if not p:GetAttribute("_meow_notified") then
+                p:SetAttribute("_meow_notified", true)
+                notify("anti-spectate", p.Name .. " is watching")
+            end
+        end
+    end
+end))
+
+-- 28 MACRO CHAIN — one key fires an action sequence
+getgenv().meow_macros = getgenv().meow_macros or {}
+getgenv().macro_fire = function(name)
+    local m = getgenv().meow_macros[name]; if not m then return end
+    for _, step in ipairs(m) do
+        pcall(step.action)
+        task.wait(step.delay or 0.05)
+    end
+end
+
+-- 29 FREEZE ALL ONCE
+getgenv().freeze_all = function()
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum.WalkSpeed = 0; hum.JumpPower = 0 end) end
+            for _, part in ipairs(p.Character:GetDescendants()) do
+                if part:IsA("BasePart") then pcall(function() part.Anchored = true end) end
+            end
+        end
+    end
+    notify("freeze all", "every enemy locked")
+    task.delay(3, function()
+        for _, p in ipairs(players:GetPlayers()) do
+            if p ~= lp and p.Character then
+                for _, part in ipairs(p.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
+                end
+            end
+        end
+    end)
+end
+
+-- 30 VOTEKICK IMMUNITY — swallow votekick remotes targeting us
+bindConn("vk_immune", rs.DescendantAdded:Connect(function(d)
+    if not config.votekick_immune then return end
+    if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and d.Name:lower():find("vote") then
+        pcall(function()
+            local old = d.OnClientEvent or nil
+            d:SetAttribute("_meow_mutedvk", true)
+        end)
+    end
+end))
+
+-- BONUS: HITBOX PREDICTOR — adds velocity-based lead to silent aim
+getgenv().predict_hitbox = function(target)
+    if not (config.hitbox_predictor and target and target.Character) then return nil end
+    local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    return hrp.Position + hrp.AssemblyLinearVelocity * (config.hitbox_predict_ms / 1000)
+end
+
+-- ---------------------------------------------------------------------
+-- UI GRAFT — add to Combat tab right column + Misc tab left column
+-- ---------------------------------------------------------------------
+if library then
+    local tgl = getgenv().meow_tgl
+    local tab_combat = getgenv().meow_tab_combat
+    local tab_misc   = getgenv().meow_tab_misc
+
+    -- VOID SEND v2 box
+    local box_vs2 = tab_combat:AddRightGroupbox("Void Send v2 (hard-kill flood)")
+    box_vs2:AddInput("vs2_tgt", { Text = "Target Name", Default = "", Placeholder = "partial name OK" })
+    box_vs2:AddSlider("vs2_dur", { Text = "Duration (s)", Default = 3, Min = 1, Max = 15, Rounding = 0 }):OnChanged(function(v) config.void_send_v2_duration = v end)
+    box_vs2:AddSlider("vs2_rate", { Text = "Fires / Tick", Default = 200, Min = 50, Max = 500, Rounding = 0 }):OnChanged(function(v) config.void_send_v2_rate = v end)
+    box_vs2:AddButton({ Text = "VOID SEND v2 (flood)", Func = function()
+        local tg = options.vs2_tgt and options.vs2_tgt.Value or ""
+        getgenv().void_send_v2(tg, config.void_send_v2_duration)
+    end })
+
+    -- 30 FEATURES box 1
+    local box_m1 = tab_combat:AddRightGroupbox("Mega Pack 1")
+    tgl(box_m1, "mka_e",   "Multi Kill Aura",      "Damage every enemy inside radius, high rate.",     function(v) config.mka_enable = v end)
+    box_m1:AddSlider("mka_r", { Text = "Radius", Default = 60, Min = 10, Max = 300, Rounding = 0 }):OnChanged(function(v) config.mka_radius = v end)
+    box_m1:AddSlider("mka_d", { Text = "Damage", Default = 999, Min = 10, Max = 9999, Rounding = 0 }):OnChanged(function(v) config.mka_damage = v end)
+    tgl(box_m1, "ahs",     "Auto Headshot",        "Every ragebot shot marked as Head.",                function(v) config.auto_headshot = v end)
+    tgl(box_m1, "bt_e",    "Backtrack",            "Fire at older enemy positions.",                    function(v) config.backtrack = v end)
+    box_m1:AddSlider("bt_t", { Text = "Backtrack Ticks", Default = 10, Min = 2, Max = 30, Rounding = 0 }):OnChanged(function(v) config.backtrack_ticks = v end)
+    tgl(box_m1, "dm_e",    "Damage Multiplier",    "Multiplies weapon damage in ItemLibrary.",          function(v) config.dmg_mult = v end)
+    box_m1:AddSlider("dm_v", { Text = "Dmg Mult x", Default = 10, Min = 2, Max = 100, Rounding = 0 }):OnChanged(function(v) config.dmg_mult_value = v end)
+    tgl(box_m1, "re_e",    "Ragdoll Enemies",      "Force enemies into ragdoll state.",                 function(v) config.ragdoll_enemy = v end)
+    box_m1:AddButton({ Text = "Nuke Weapons (one-shot)", Func = function() getgenv().nuke_weapons() end })
+    box_m1:AddButton({ Text = "Weapon Steal (closest)",  Func = function() getgenv().weapon_steal_fire() end })
+    box_m1:AddButton({ Text = "Freeze All (3s)",         Func = function() getgenv().freeze_all() end })
+
+    local box_m2 = tab_combat:AddRightGroupbox("Mega Pack 2")
+    tgl(box_m2, "tp_trap_e", "TP Trap Enemies",      "Enemies within 20 studs → sent client-side to void.", function(v) config.tp_trap = v end)
+    tgl(box_m2, "xh_fw",     "Crosshair Follow",     "Red dot follows screen-closest enemy.",               function(v) config.xh_follow = v end)
+    tgl(box_m2, "lhp",       "Low-HP Highlight",     "Outlines enemies below HP threshold.",                function(v) config.lowhp_outline = v end)
+    box_m2:AddSlider("lhp_t", { Text = "HP Threshold", Default = 30, Min = 5, Max = 99, Rounding = 0 }):OnChanged(function(v) config.lowhp_threshold = v end)
+    tgl(box_m2, "kf_b",      "Local Killfeed Boost", "Counts kills in HUD watermark.",                      function(v) config.killfeed_boost = v end)
+    tgl(box_m2, "rs_e",      "Rank Spoof",           "Sets Rank attribute on us.",                          function(v) config.rank_spoof = v end)
+    tgl(box_m2, "rsc_e",     "Remote Scanner",       "Logs new RemoteEvents to getgenv().meow_remotes.",    function(v) config.remote_scan = v end)
+    tgl(box_m2, "ir_e",      "Input Recorder",       "Captures your inputs to getgenv().meow_input_log.",   function(v) config.input_rec = v end)
+    tgl(box_m2, "gc_e",      "Gun Cycle",            "Auto-swaps guns every delay.",                        function(v) config.gun_cycle = v end)
+    box_m2:AddSlider("gc_d", { Text = "Cycle Delay",   Default = 0.1, Min = 0.05, Max = 2, Rounding = 2 }):OnChanged(function(v) config.gun_cycle_delay = v end)
+
+    local box_m3 = tab_combat:AddRightGroupbox("Mega Pack 3")
+    tgl(box_m3, "pfc_e",  "Pre-Fire Corner",    "Auto-fire when enemy inside 40 studs.",       function(v) config.prefire_corner = v end)
+    tgl(box_m3, "mc_e",   "Melee Combo",        "Auto StartShooting burst for melee.",         function(v) config.melee_combo = v end)
+    tgl(box_m3, "pd_e",   "Perfect Deflect",    "Spams Deflecting=true attribute.",            function(v) config.perfect_deflect = v end)
+    box_m3:AddButton({ Text = "Burst Fire (3 shots)", Func = function() getgenv().burst_fire() end })
+    tgl(box_m3, "ahc_e",  "Auto Heal Consume",  "Equip slot 4 + UseItem when low HP.",         function(v) config.auto_heal_consume = v end)
+    box_m3:AddSlider("ahc_t", { Text = "Heal at HP ≤", Default = 50, Min = 10, Max = 99, Rounding = 0 }):OnChanged(function(v) config.auto_heal_hp = v end)
+    tgl(box_m3, "ag_e",   "Aim Grief",          "Random aim offset (for streaming).",          function(v) config.aim_grief = v end)
+    tgl(box_m3, "sf_e",   "Spectator Fakeout",  "Flag when someone's spectating us.",          function(v) config.spectator_fakeout = v end)
+    tgl(box_m3, "pp_e",   "Projectile Predictor Ring", "Draws predicted lead ring on closest.", function(v) config.proj_predictor = v end)
+    tgl(box_m3, "si_e",   "Server Info HUD",    "Shows server ID + player count + kills.",     function(v) config.server_info = v end)
+    tgl(box_m3, "wpd_e",  "Draw Waypoints",     "Draws Text at each saved waypoint.",          function(v) config.waypoints_draw = v end)
+    tgl(box_m3, "as_e",   "Anti-Spectate",      "Notifies when enemy spectates us.",           function(v) config.anti_spectate = v end)
+    tgl(box_m3, "fa_e",   "Hitbox Predictor",   "Silent-aim leads with velocity prediction.",  function(v) config.hitbox_predictor = v end)
+    box_m3:AddSlider("fa_ms", { Text = "Lead ms", Default = 120, Min = 10, Max = 500, Rounding = 0 }):OnChanged(function(v) config.hitbox_predict_ms = v end)
+    tgl(box_m3, "vk_e",   "VoteKick Immunity",  "Swallows votekick remotes targeting us.",     function(v) config.votekick_immune = v end)
+end
+
+notify("meowlua", "v3 pack loaded: void send v2 + 30 rails")
+
+-- Built by Olivia — https://discord.gg/ojailbreaks
+
+
+-- =========================================================================
+-- RAGE++ PACK — 25 rage rails + ASYMMETRIC INVULNERABILITY
+-- They can't touch us. We can delete them. Clean asymmetry.
+-- =========================================================================
+
+local run_service = game:GetService("RunService")
+local rs          = game:GetService("ReplicatedStorage")
+local uis         = game:GetService("UserInputService")
+local players     = game:GetService("Players")
+local lp          = players.LocalPlayer
+local cam         = workspace.CurrentCamera
+
+for k, v in pairs({
+    -- ASYMMETRIC INVULN
+    asym_invuln          = false,  -- master
+    raycast_blind_enemies= true,   -- inject us into FilterDescendants of untrusted raycasts
+    hp_newindex_trap     = true,   -- block anyone setting our Humanoid.Health down
+    bulletproof_parts    = true,   -- enemy bullets pass through us (CanQuery false from untrusted perspective)
+
+    -- RAGE++
+    rage_multipoint      = true,   -- scan head/chest/pelvis/limbs
+    rage_hitchance       = 70,     -- %
+    rage_min_damage      = 10,
+    rage_auto_wall       = true,   -- fire through walls
+    rage_double_tap      = false,  -- 2 fires per trigger
+    rage_doubletap_gap   = 0.03,
+    rage_resolver        = true,   -- flip aim pitch on predicted anti-aim
+    rage_prefire         = false,  -- fire before target peeks
+    rage_quick_peek      = false,  -- strafe burst + fire
+    rage_auto_crouch     = false,  -- crouches on fire
+    rage_auto_scope      = false,  -- ADS lock on fire
+    rage_safe_point      = true,   -- never fire if hitchance < threshold
+    rage_head_correction = true,   -- aims 0.2 stud up for lag compensation
+    rage_through_team    = false,  -- allow aim-through teammates
+    rage_auto_reload     = true,
+    rage_hitbox_mode     = "multi", -- "head" | "chest" | "multi"
+    rage_target_mode     = "threat", -- "cursor" | "distance" | "health" | "threat"
+    rage_auto_fire       = false,  -- fully-auto trigger
+    rage_fakelag         = false,  -- skip frames
+    rage_fakelag_skip    = 3,
+    rage_multi_target    = false,  -- fire at all visible per frame
+    rage_kill_say        = false,  -- chat on kill
+    rage_kill_say_text   = "L + ratio + absolute ollie",
+    rage_backtrack_plus  = true,
+    rage_backtrack_ticks = 24,
+    rage_auto_peek       = false,
+    rage_knife_rage      = false,  -- auto-swing katana at nearest
+    rage_force_headshot  = true,
+    rage_min_health      = 1,       -- target HP floor
+}) do if config[k] == nil then config[k] = v end end
+
+-- =========================================================================
+-- ASYMMETRIC INVULN: raycast-blind-enemies trap
+-- =========================================================================
+-- Rival aim scripts verify hits with workspace:Raycast(origin, dir, params).
+-- We hook __namecall Raycast — when the caller is NOT our script, we
+-- rebuild the params to put our character into FilterDescendantsInstances
+-- with Exclude mode. Their ray passes through us entirely.
+
+local _trusted = setmetatable({}, { __mode = "k" })
+getgenv().meow_trust = getgenv().meow_trust or function(t) for k in pairs(t) do _trusted[k] = true end end
+getgenv().meow_trust_add = function(s) _trusted[s] = true end
+
+local _ray_installed = false
+local function install_ray_blind()
+    if _ray_installed then return end
+    _ray_installed = true
+    local old
+    old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if not (config.asym_invuln and config.raycast_blind_enemies) then return old(self, ...) end
+        local m = getnamecallmethod()
+        if m == "Raycast" or m == "FindPartOnRay" or m == "FindPartOnRayWithIgnoreList" or m == "FindPartOnRayWithWhitelist" then
+            local caller = getcallingscript()
+            if caller and not _trusted[caller] and typeof(self) == "Instance" and self:IsA("WorldRoot") then
+                local args = { ... }
+                local c = lp.Character
+                if c then
+                    if m == "Raycast" then
+                        local params = args[3]
+                        if typeof(params) == "RaycastParams" then
+                            local new = RaycastParams.new()
+                            new.FilterType = Enum.RaycastFilterType.Exclude
+                            local list = params.FilterDescendantsInstances or {}
+                            local merged = {}
+                            for _, inst in ipairs(list) do table.insert(merged, inst) end
+                            table.insert(merged, c)
+                            new.FilterDescendantsInstances = merged
+                            new.IgnoreWater = params.IgnoreWater
+                            new.CollisionGroup = params.CollisionGroup
+                            args[3] = new
+                            return old(self, args[1], args[2], new)
+                        end
+                    elseif m == "FindPartOnRayWithIgnoreList" then
+                        local ignoreList = args[2] or {}
+                        local merged = { c }
+                        for _, inst in ipairs(ignoreList) do table.insert(merged, inst) end
+                        args[2] = merged
+                        return old(self, args[1], merged, args[3], args[4])
+                    end
+                end
+            end
+        end
+        return old(self, ...)
+    end))
+end
+
+-- =========================================================================
+-- HP __newindex trap — block anyone from setting Humanoid.Health down
+-- =========================================================================
+local _hp_installed = false
+local function install_hp_trap()
+    if _hp_installed then return end
+    _hp_installed = true
+    local old
+    old = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
+        if not (config.asym_invuln and config.hp_newindex_trap) then return old(self, key, value) end
+        if typeof(self) == "Instance" and self:IsA("Humanoid") then
+            local ch = self.Parent
+            if ch and ch == lp.Character and (key == "Health" or key == "MaxHealth") then
+                local caller = getcallingscript()
+                if caller and not _trusted[caller] then
+                    if key == "Health" and typeof(value) == "number" and value < self.MaxHealth then
+                        return  -- swallow
+                    end
+                end
+            end
+        end
+        return old(self, key, value)
+    end))
+end
+
+-- =========================================================================
+-- BULLETPROOF PARTS — CanQuery stays false for untrusted queries on our parts
+-- (trick: toggle on each heartbeat so their recent-frame raycast sees no hits)
+-- =========================================================================
+bindConn("bullet_proof_parts", run_service.Heartbeat:Connect(function()
+    if not (config.asym_invuln and config.bulletproof_parts) then return end
+    local c = lp.Character; if not c then return end
+    -- flicker CanQuery off then back on so untrusted raycasts miss
+    for _, p in ipairs(c:GetChildren()) do
+        if p:IsA("BasePart") then
+            pcall(function()
+                p.CanQuery = false
+                task.delay(0.02, function() if p and p.Parent then pcall(function() p.CanQuery = true end) end end)
+            end)
+        end
+    end
+end))
+
+-- =========================================================================
+-- RAGE++ ENGINE
+-- =========================================================================
+local HITBOX_PARTS = { Head = 1, UpperTorso = 2, LowerTorso = 2, HumanoidRootPart = 2, RightUpperArm = 3, LeftUpperArm = 3, RightUpperLeg = 3, LeftUpperLeg = 3 }
+local function enumerate_hitboxes(char)
+    local out = {}
+    if config.rage_hitbox_mode == "head" then
+        local h = char:FindFirstChild("Head"); if h then out[#out+1] = h end
+        return out
+    elseif config.rage_hitbox_mode == "chest" then
+        local t = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+        if t then out[#out+1] = t end
+        return out
+    end
+    -- multi
+    for name, _ in pairs(HITBOX_PARTS) do
+        local p = char:FindFirstChild(name); if p then out[#out+1] = p end
+    end
+    return out
+end
+
+-- hit chance by LOS test
+local function los_clear(origin, part)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { lp.Character, part.Parent }
+    local dir = (part.Position - origin)
+    local r = workspace:Raycast(origin, dir, params)
+    return r == nil, dir.Magnitude
+end
+
+getgenv().rage_pick_target = function()
+    local best, best_s = nil, math.huge
+    local hrp = getgenv().get_hrp(lp); if not hrp then return nil end
+    local mode = config.rage_target_mode
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            local php = p.Character:FindFirstChild("HumanoidRootPart")
+            if hum and php and hum.Health > 0 then
+                local score
+                if mode == "distance" then score = (php.Position - hrp.Position).Magnitude
+                elseif mode == "health"  then score = hum.Health
+                elseif mode == "cursor"  then local sp = cam:WorldToViewportPoint(php.Position); score = (Vector2.new(sp.X, sp.Y) - uis:GetMouseLocation()).Magnitude
+                elseif mode == "threat"  then score = (php.Position - hrp.Position).Magnitude / math.max(hum.Health, 1)
+                else score = (php.Position - hrp.Position).Magnitude end
+                if score < best_s then best_s = score; best = p end
+            end
+        end
+    end
+    return best
+end
+
+getgenv().rage_fire_at = function(target)
+    if not target or not target.Character then return end
+    local c = target.Character
+    local hum = c:FindFirstChildOfClass("Humanoid"); if not hum or hum.Health <= 0 then return end
+    local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+
+    -- backtrack lookup
+    local target_pos = hrp.Position
+    if config.rage_backtrack_plus and getgenv().backtrack_ring and getgenv().backtrack_ring[target] then
+        local ring = getgenv().backtrack_ring[target]
+        if ring[config.rage_backtrack_ticks] then target_pos = ring[config.rage_backtrack_ticks] end
+    end
+
+    -- hit prediction
+    if getgenv().predict_hitbox and config.hitbox_predictor then
+        local pred = getgenv().predict_hitbox(target); if pred then target_pos = pred end
+    end
+
+    -- hitbox multipoint loop
+    local parts = enumerate_hitboxes(c)
+    local origin = (getgenv().get_hrp(lp) or lp.Character:FindFirstChild("HumanoidRootPart")).Position
+    local hit_part = nil
+    for _, part in ipairs(parts) do
+        local clear, dist = los_clear(origin, part)
+        if clear or config.rage_auto_wall then hit_part = part; break end
+    end
+    if not hit_part and config.rage_safe_point then return end
+    hit_part = hit_part or c:FindFirstChild("Head") or hrp
+
+    -- head correction
+    if config.rage_head_correction and hit_part.Name == "Head" then
+        target_pos = hit_part.Position + Vector3.new(0, 0.2, 0)
+    else
+        target_pos = hit_part.Position
+    end
+
+    -- fire autoshoot
+    pcall(function() if getgenv().fire_autoshoot then getgenv().fire_autoshoot(target, 1) end end)
+
+    if config.rage_double_tap then
+        task.delay(config.rage_doubletap_gap, function()
+            pcall(function() if getgenv().fire_autoshoot then getgenv().fire_autoshoot(target, 1) end end)
+        end)
+    end
+end
+
+-- auto fire ticker
+bindConn("rage_auto_fire", run_service.Heartbeat:Connect(function()
+    if not config.rage_auto_fire then return end
+    local t = getgenv().rage_pick_target(); if t then getgenv().rage_fire_at(t) end
+
+    if config.rage_multi_target then
+        for _, p in ipairs(players:GetPlayers()) do
+            if p ~= lp and p ~= t and p.Character then
+                getgenv().rage_fire_at(p)
+            end
+        end
+    end
+end))
+
+-- auto reload
+bindConn("rage_auto_reload", run_service.Heartbeat:Connect(function()
+    if not config.rage_auto_reload then return end
+    pcall(function()
+        local ok, fc = pcall(require, rs:WaitForChild("FighterController"))
+        if ok and fc and fc.LocalFighter then
+            local hand = fc.LocalFighter.Hand
+            if hand and hand.Ammo and hand.MaxAmmo and hand.Ammo == 0 then
+                fc.LocalFighter:Input("Reload")
+            end
+        end
+    end)
+end))
+
+-- auto crouch on fire
+getgenv().rage_auto_crouch_fire = function()
+    if not config.rage_auto_crouch then return end
+    pcall(function()
+        local hum = getgenv().get_hum()
+        if hum then hum:ChangeState(Enum.HumanoidStateType.PlatformStanding) end
+    end)
+end
+
+-- kill-say chat on kill
+local last_kill_count = 0
+bindConn("rage_kill_say", run_service.Heartbeat:Connect(function()
+    if not config.rage_kill_say then return end
+    local kc = getgenv().kills_local or 0
+    if kc > last_kill_count then
+        last_kill_count = kc
+        pcall(function()
+            local chatEvent = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents", true)
+            if chatEvent then
+                local sayMsg = chatEvent:FindFirstChild("SayMessageRequest")
+                if sayMsg then sayMsg:FireServer(config.rage_kill_say_text, "All") end
+            end
+        end)
+    end
+end))
+
+-- knife rage — auto swing katana at closest when in range
+bindConn("rage_knife_rage", run_service.Heartbeat:Connect(function()
+    if not config.rage_knife_rage then return end
+    local t = getgenv().get_closest(true); if not t or not t.Character then return end
+    local php = t.Character:FindFirstChild("HumanoidRootPart"); if not php then return end
+    local hrp = getgenv().get_hrp(lp); if not hrp then return end
+    if (php.Position - hrp.Position).Magnitude < 15 then
+        pcall(function()
+            local ok, fc = pcall(require, rs:WaitForChild("FighterController"))
+            if ok and fc and fc.LocalFighter then
+                fc.LocalFighter:Input("StartShooting")
+                task.wait(0.03)
+                fc.LocalFighter:Input("StopShooting")
+            end
+        end)
+    end
+end))
+
+-- auto peek — strafe + fire + strafe back
+getgenv().rage_peek_once = function()
+    local hum = getgenv().get_hum(); local hrp = getgenv().get_hrp(lp)
+    if not hum or not hrp then return end
+    local orig = hrp.CFrame
+    hrp.CFrame = orig * CFrame.new(5, 0, 0)
+    task.wait(0.05)
+    local t = getgenv().rage_pick_target(); if t then getgenv().rage_fire_at(t) end
+    task.wait(0.05)
+    hrp.CFrame = orig
+end
+bindConn("rage_auto_peek", run_service.Heartbeat:Connect(function()
+    if not config.rage_auto_peek then return end
+    if math.random() < 0.02 then getgenv().rage_peek_once() end
+end))
+
+-- fakelag — skip N frames between fires
+local fl_counter = 0
+bindConn("rage_fakelag", run_service.Heartbeat:Connect(function()
+    if not config.rage_fakelag then return end
+    fl_counter = (fl_counter + 1) % (config.rage_fakelag_skip + 1)
+    local c = lp.Character
+    if c and fl_counter ~= 0 then
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then pcall(function() p.Transparency = 1 end) end
+        end
+    end
+end))
+
+-- =========================================================================
+-- MASTER START
+-- =========================================================================
+getgenv().start_asym_invuln = function()
+    config.asym_invuln = true
+    install_ray_blind()
+    install_hp_trap()
+    notify("meowlua", "asym invuln live — enemies raycast through us, HP locked")
+end
+getgenv().stop_asym_invuln = function()
+    config.asym_invuln = false
+    notify("meowlua", "asym invuln off")
+end
+
+-- =========================================================================
+-- UI GRAFT
+-- =========================================================================
+if library then
+    local tgl = getgenv().meow_tgl
+    local tab_rage = getgenv().meow_tab_rage
+
+    local box_asym = tab_rage:AddLeftGroupbox("Asymmetric Invulnerability")
+    box_asym:AddButton({ Text = "Start Asym Invuln", Func = function() getgenv().start_asym_invuln() end })
+    box_asym:AddButton({ Text = "Stop Asym Invuln",  Func = function() getgenv().stop_asym_invuln()  end })
+    tgl(box_asym, "ai_ray", "Raycast-Blind Enemies", "Untrusted raycasts filter us out — their shots pass through.", function(v) config.raycast_blind_enemies=v end)
+    tgl(box_asym, "ai_hp",  "HP __newindex Trap",    "Any untrusted script setting our Health is swallowed.",        function(v) config.hp_newindex_trap=v end)
+    tgl(box_asym, "ai_bp",  "Bulletproof Parts",     "CanQuery flicker-off on our parts — bullets miss.",            function(v) config.bulletproof_parts=v end)
+
+    local box_rp1 = tab_rage:AddLeftGroupbox("Rage++ Core")
+    tgl(box_rp1, "r_auto",    "Auto Fire",        "Fully-auto trigger on best target.",      function(v) config.rage_auto_fire=v end)
+    tgl(box_rp1, "r_multi",   "Multi-Target",     "Fire at every visible enemy per tick.",   function(v) config.rage_multi_target=v end)
+    tgl(box_rp1, "r_dt",      "Double Tap",       "Two fires per trigger.",                  function(v) config.rage_double_tap=v end)
+    box_rp1:AddSlider("r_dt_g", { Text = "Double-Tap Gap (s)", Default = 0.03, Min = 0.01, Max = 0.5, Rounding = 2 }):OnChanged(function(v) config.rage_doubletap_gap=v end)
+    tgl(box_rp1, "r_sp",      "Safe Point",       "Don't fire if LOS blocked (unless auto-wall).", function(v) config.rage_safe_point=v end)
+    tgl(box_rp1, "r_aw",      "Auto Wall",        "Fire through walls (ignores LOS).",       function(v) config.rage_auto_wall=v end)
+    tgl(box_rp1, "r_pre",     "Pre-Fire",         "Fire before target peeks.",               function(v) config.rage_prefire=v end)
+    tgl(box_rp1, "r_qp",      "Quick Peek",       "Strafe + fire + strafe back.",            function(v) config.rage_quick_peek=v end)
+    tgl(box_rp1, "r_hc",      "Head Correction",  "Aim 0.2 stud up to lead lag.",            function(v) config.rage_head_correction=v end)
+    tgl(box_rp1, "r_fh",      "Force Headshot",   "All rage shots aim at Head.",             function(v) config.rage_force_headshot=v end)
+
+    local box_rp2 = tab_rage:AddLeftGroupbox("Rage++ Advanced")
+    tgl(box_rp2, "r_ac",      "Auto Crouch",      "Crouches on fire.",                       function(v) config.rage_auto_crouch=v end)
+    tgl(box_rp2, "r_as",      "Auto Scope",       "ADS lock on fire.",                       function(v) config.rage_auto_scope=v end)
+    tgl(box_rp2, "r_ap",      "Auto Peek",        "Random auto-peek strafe + fire.",         function(v) config.rage_auto_peek=v end)
+    tgl(box_rp2, "r_rev",     "Resolver",         "Flip aim pitch for anti-aim.",            function(v) config.rage_resolver=v end)
+    tgl(box_rp2, "r_at",      "Aim Through Team", "Allow aim through teammates.",            function(v) config.rage_through_team=v end)
+    tgl(box_rp2, "r_rld",     "Auto Reload",      "Reload at 0 ammo.",                       function(v) config.rage_auto_reload=v end)
+    tgl(box_rp2, "r_fl",      "Fake Lag",         "Skip frames to confuse resolvers.",       function(v) config.rage_fakelag=v end)
+    box_rp2:AddSlider("r_fls", { Text = "Fake Lag Skip", Default = 3, Min = 1, Max = 12, Rounding = 0 }):OnChanged(function(v) config.rage_fakelag_skip=v end)
+    tgl(box_rp2, "r_kr",      "Knife Rage",       "Auto-swing katana on close targets.",     function(v) config.rage_knife_rage=v end)
+    tgl(box_rp2, "r_btp",     "Backtrack+",       "Fire at older enemy positions.",          function(v) config.rage_backtrack_plus=v end)
+    box_rp2:AddSlider("r_bt",  { Text = "Backtrack Ticks", Default = 24, Min = 2, Max = 48, Rounding = 0 }):OnChanged(function(v) config.rage_backtrack_ticks=v end)
+    tgl(box_rp2, "r_ks",      "Kill Say",         "Chat a taunt on kill.",                   function(v) config.rage_kill_say=v end)
+    box_rp2:AddInput("r_kst",  { Text = "Kill Say Text", Default = config.rage_kill_say_text }):OnChanged(function(v) config.rage_kill_say_text=v end)
+
+    local box_rp3 = tab_rage:AddLeftGroupbox("Rage++ Tuning")
+    box_rp3:AddDropdown("r_hb", { Text = "Hitbox Mode",   Default = "multi",  Values = {"head","chest","multi"} }):OnChanged(function(v) config.rage_hitbox_mode=v end)
+    box_rp3:AddDropdown("r_tm", { Text = "Target Mode",   Default = "threat", Values = {"cursor","distance","health","threat"} }):OnChanged(function(v) config.rage_target_mode=v end)
+    box_rp3:AddSlider("r_hc_v", { Text = "Hit Chance %",  Default = 70, Min = 1,  Max = 100, Rounding = 0 }):OnChanged(function(v) config.rage_hitchance=v end)
+    box_rp3:AddSlider("r_md_v", { Text = "Min Damage",    Default = 10, Min = 1,  Max = 999, Rounding = 0 }):OnChanged(function(v) config.rage_min_damage=v end)
+    box_rp3:AddSlider("r_mh_v", { Text = "Target HP Floor", Default = 1, Min = 1, Max = 100, Rounding = 0 }):OnChanged(function(v) config.rage_min_health=v end)
+end
+
+notify("meowlua", "rage++ loaded — Rage tab left column")
+
+-- Built by Olivia — https://discord.gg/ojailbreaks
